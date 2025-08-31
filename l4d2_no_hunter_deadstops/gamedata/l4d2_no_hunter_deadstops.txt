@@ -1,0 +1,36 @@
+"Games"
+{
+    "left4dead2"
+    {
+        "Functions"
+        {
+            "CY115::CTerrorPlayer::OnGroundChanged"
+            {
+				"offset"	"CY115::CTerrorPlayer::OnGroundChanged"
+				"hooktype"	"entity"
+				"this"		"entity"
+				"return"	"int"
+				"arguments"
+				{
+					"a2"
+					{
+						"type"	"cbaseentity"
+					}
+
+					"a3"
+					{
+						"type"	"cbaseentity"
+					}
+				}
+            }
+        }
+
+        "Offsets"
+        {
+            "CY115::CTerrorPlayer::OnGroundChanged"
+            {
+                "linux"     "158"
+            }
+        }
+    }
+}
