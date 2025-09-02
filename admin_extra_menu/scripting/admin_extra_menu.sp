@@ -1140,7 +1140,7 @@ int AISI_MenuHandler(Menu menu, MenuAction action, int client, int param2)
         case MenuAction_Select: {
             int iKickTarget;
             if (GetClientCount(false) >= MaxClients - 1) {
-                CPrintToChat(client, "%s{default}槽位已满, 正在尝试{green}踢出死亡的特感AI... ...");
+                CPrintToChat(client, "%s{default}槽位已满, 正在尝试{green}踢出死亡的特感AI... ...", PLUGIN_TAG);
                 iKickTarget = KickDeadInfectedBots(client);
             }
 
