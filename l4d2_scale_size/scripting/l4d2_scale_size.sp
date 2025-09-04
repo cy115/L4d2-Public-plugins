@@ -129,7 +129,7 @@ void SetWitchStaticSize(int witch)
 
 public void OnEntityCreated(int entity, const char[] classname)
 {
-    if (!IsValidEntity(entity)) {
+    if (!IsValidEntity(entity) || !entity) {
         return;
     }
 
