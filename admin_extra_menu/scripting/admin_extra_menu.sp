@@ -773,7 +773,7 @@ int Life_MenuHandler(Menu menu, MenuAction action, int client, int param2)
                 }
                 default: {
                     int target = GetClientOfUserId(StringToInt(item));
-                    if (target > 0 && target <= MaxClients && IsClientInGame(target) && IsPlayerAlive(target)) {
+                    if (IsValidClient(target) && IsPlayerAlive(target)) {
                         CheatCommand(target, "give health");
                         CPrintToChatAll("%s{green}%N {default}给 {green}%N {default}刷了一份 {olive}生命值{default}.", PLUGIN_TAG, client, target);
                     }
@@ -874,7 +874,7 @@ int TeleprotDestination_MenuHandler(Menu menu, MenuAction action, int client, in
                 case 's': targetTeam = 2;
                 case 'i': targetTeam = 3;
                 default: {
-                    if (victim && IsClientInGame(victim)) {
+                    if (IsValidClient(victim)) {
                         targetTeam = GetClientTeam(victim);
                     }
                 }
@@ -885,15 +885,18 @@ int TeleprotDestination_MenuHandler(Menu menu, MenuAction action, int client, in
             }
             else {
                 int target = GetClientOfUserId(StringToInt(info[1]));
-                if (target > 0 && target <= MaxClients && IsClientInGame(target)) {
+                if (IsValidClient(target)) {
                     GetClientAbsOrigin(target, vOrigin);
                     allow = true;
-                    CPrintToChatAll("%s{green}%N {default}将 %s%N {default}传送到 {green}%N{default}处.", PLUGIN_TAG, client, GetClientTeam(victim) == 2 ? "{blue}" : "{red}", victim, target);
+                    if(IsValidClient(victim))
+                        CPrintToChatAll("%s{green}%N {default}将 %s%N {default}传送到 {green}%N{default}处.", PLUGIN_TAG, client, GetClientTeam(victim) == 2 ? "{blue}" : "{red}", victim, target);
+                    else
+                        CPrintToChatAll("%s{green}%N {default}将 %s {default}传送到 {green}%N{default}处.", PLUGIN_TAG, client, targetTeam == 2 ? "{blue}所有生还" : "{red}所有特感", target);
                 }
             }
 
             if (allow) {
-                if (victim > 0 && victim <= MaxClients && IsClientInGame(victim)) {
+                if (IsValidClient(victim)) {
                     ForceCrouch(victim);
                     TeleportFix(victim);
                     TeleportEntity(victim, vOrigin, NULL_VECTOR, NULL_VECTOR);
@@ -911,8 +914,8 @@ int TeleprotDestination_MenuHandler(Menu menu, MenuAction action, int client, in
                                     TeleportEntity(i, vOrigin, NULL_VECTOR, NULL_VECTOR);
                                 }
                             }
-
-                            CPrintToChatAll("%s{green}%N {default}将 {blue}所有生还 {default}传送到操作者的准心处.", PLUGIN_TAG, client);
+                            if (info[1][0] == 'c')
+                                CPrintToChatAll("%s{green}%N {default}将 {blue}所有生还 {default}传送到操作者的准心处.", PLUGIN_TAG, client);
                         }   
                         case 3: {
                             for (int i = 1; i <= MaxClients; i++) {
@@ -921,8 +924,8 @@ int TeleprotDestination_MenuHandler(Menu menu, MenuAction action, int client, in
                                     TeleportEntity(i, vOrigin, NULL_VECTOR, NULL_VECTOR);
                                 }
                             }
-
-                            CPrintToChatAll("%s{green}%N {default}将 {red}所有特感 {default}传送到操作者的准心处.", PLUGIN_TAG, client);
+                            if (info[1][0] == 'c')
+                                CPrintToChatAll("%s{green}%N {default}将 {red}所有特感 {default}传送到操作者的准心处.", PLUGIN_TAG, client);
                         }
                     }
                 }
@@ -984,7 +987,7 @@ void TeleportFix(int client)
 
 void WarpToStartArea(int client, int target = 0, int team = 0)
 {
-    if (target > 0 && target <= MaxClients && IsClientInGame(target)) {
+    if (IsValidClient(target)) {
         CheatCommand(target, "warp_to_start_area");
         CPrintToChatAll("%s{green}%N {default}将 %s%N {default}传送到起点安全区/屋.", PLUGIN_TAG, client, GetClientTeam(target) == 2 ? "{blue}" : "{red}", target);
     }
@@ -1009,7 +1012,7 @@ void WarpToCheckpoint(int client, int target = 0, int team = 0)
             int navArea = SDKCall(g_hSDK_Checkpoint_GetLargestArea, pLastCheckpoint);
             if (navArea) {
                 float vPos[3];
-                if (target > 0 && target <= MaxClients && IsClientInGame(target)) {
+                if (IsValidClient(target)) {
                     L4D_FindRandomSpot(navArea, vPos);
                     TeleportEntity(target, vPos, NULL_VECTOR, NULL_VECTOR);
                     CPrintToChatAll("%s{green}%N {default}将 %s%N {default}传送到终点安全区/屋.", PLUGIN_TAG, client, GetClientTeam(target) == 2 ? "{blue}" : "{red}", target);
@@ -1543,7 +1546,7 @@ int SlotSelect_MenuHandler(Menu menu, MenuAction action, int client, int param2)
             menu.GetItem(param2, item, sizeof(item));
             ExplodeString(item, "|", info, sizeof(info), sizeof(info[]));
             int target = GetClientOfUserId(StringToInt(info[0]));
-            if (target > 0 && target <= MaxClients && IsClientInGame(target)) {
+            if (IsValidClient(target)) {
                 if (info[1][0] == 'a') {
                     L4D_RemoveAllWeapons(target);
                     CPrintToChatAll("%s{green}%N {default}已经剥夺 {green}%N {default}的所有的装备.", PLUGIN_TAG, client, target);
@@ -1603,7 +1606,7 @@ int IncapSur_MenuHandler(Menu menu, MenuAction action, int client, int param2)
             }
             else {
                 int target = GetClientOfUserId(StringToInt(item));
-                if (target > 0 && target <= MaxClients && IsClientInGame(target)) {
+                if (IsValidClient(target)) {
                     CPrintToChatAll("%s{green}%N {default}强制 {green}%N {default}倒地.", PLUGIN_TAG, client, target);
                     Incap(target);
                 }
@@ -1646,7 +1649,7 @@ int GodMode_MenuHandler(Menu menu, MenuAction action, int client, int param2)
             char item[12];
             menu.GetItem(param2, item, sizeof(item));
             int target = GetClientOfUserId(StringToInt(item));
-            if (target > 0 && target <= MaxClients && IsClientInGame(target)) {
+            if (IsValidClient(target)) {
                 g_bGodMode[target] = !g_bGodMode[target];
                 CPrintToChat(client, "%s{green}%N %s {default}了 {green}%N {default}的伤害免疫", PLUGIN_TAG, client, g_bGodMode[target] ? "{blue}启用" : "{red}禁用", target);
             }
@@ -1732,7 +1735,7 @@ int SwitchTeam_MenuHandler(Menu menu, MenuAction action, int client, int param2)
             menu.GetItem(param2, item, sizeof(item));
             g_iSelection[client] = menu.Selection;
             int target = GetClientOfUserId(StringToInt(item));
-            if (target > 0 && target <= MaxClients && IsClientInGame(target)) {
+            if (IsValidClient(target)) {
                 SwitchPlayerTeam(client, target);
             }
             else {
@@ -1783,7 +1786,7 @@ int SwitchPlayerTeam_MenuHandler(Menu menu, MenuAction action, int client, int p
             menu.GetItem(param2, item, sizeof(item));
             ExplodeString(item, "|", info, sizeof(info), sizeof(info[]));
             int target = GetClientOfUserId(StringToInt(info[0]));
-            if (target > 0 && target <= MaxClients && IsClientInGame(target)) {
+            if (IsValidClient(target)) {
                 int team;
                 if (!GetBotOfIdlePlayer(target)) {
                     team = GetClientTeam(target);
@@ -1910,7 +1913,7 @@ int RespawnPlayer_MenuHandler(Menu menu, MenuAction action, int client, int para
             }
             else {
                 int target = GetClientOfUserId(StringToInt(item));
-                if (target > 0 && target <= MaxClients && IsClientInGame(target) && !IsPlayerAlive(target)) {
+                if (IsValidClient(target) && !IsPlayerAlive(target)) {
                     StatsConditionPatch(true);
                     L4D_RespawnPlayer(target);
                     StatsConditionPatch(false);
@@ -2492,6 +2495,10 @@ int GetIdlePlayerOfBot(int client)
     if (!HasEntProp(client, Prop_Send, "m_humanSpectatorUserID")) {
         return 0;
     }
-
     return GetClientOfUserId(GetEntProp(client, Prop_Send, "m_humanSpectatorUserID"));
+}
+
+bool IsValidClient(int client)
+{
+	return (client > 0 && client <= MaxClients && IsClientInGame(client));
 }
