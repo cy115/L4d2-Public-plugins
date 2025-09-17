@@ -151,6 +151,11 @@ public void OnPluginStart()
         OnAdminMenuReady(top_menu);
     }
 }
+
+public void OnAllPluginsLoaded()
+{
+    g_pZombieManager = L4D_GetPointer(POINTER_ZOMBIEMANAGER);
+}
 // ------------------------------------------------------------ GameData ------------------------------------------------------------------------
 void LoadGameData()
 {
@@ -1264,7 +1269,7 @@ int CreateInfectedBot(int client, int type)
             }
             
             InitializeSpecial(ent, vPos, NULL_VECTOR);
-            CPrintToChatAll("%s{green}%N {default}生成一个AI的[{red}Smoker{default}]", PLUGIN_TAG, client);
+            CPrintToChatAll("%s{green}%N {default}生成了一个AI的[{red}Smoker{default}]", PLUGIN_TAG, client);
         }
         case 2: {
             ent = SDKCall(g_hSDK_NextBotCreatePlayerBot_Boomer, "Boomer");
@@ -1273,7 +1278,7 @@ int CreateInfectedBot(int client, int type)
             }
             
             InitializeSpecial(ent, vPos, NULL_VECTOR);
-            CPrintToChatAll("%s{green}%N {default}生成一个AI的[{red}Boomer{default}]", PLUGIN_TAG, client);
+            CPrintToChatAll("%s{green}%N {default}生成了一个AI的[{red}Boomer{default}]", PLUGIN_TAG, client);
         }
         case 3: {
             ent = SDKCall(g_hSDK_NextBotCreatePlayerBot_Hunter, "Hunter");
@@ -1282,7 +1287,7 @@ int CreateInfectedBot(int client, int type)
             }
             
             InitializeSpecial(ent, vPos, NULL_VECTOR);
-            CPrintToChatAll("%s{green}%N {default}生成一个AI的[{red}Hunter{default}]", PLUGIN_TAG, client);
+            CPrintToChatAll("%s{green}%N {default}生成了一个AI的[{red}Hunter{default}]", PLUGIN_TAG, client);
         }
         case 4: {
             ent = SDKCall(g_hSDK_NextBotCreatePlayerBot_Spitter, "Spitter");
@@ -1291,7 +1296,7 @@ int CreateInfectedBot(int client, int type)
             }
             
             InitializeSpecial(ent, vPos, NULL_VECTOR);
-            CPrintToChatAll("%s{green}%N {default}生成一个AI的[{red}Spitter{default}]", PLUGIN_TAG, client);
+            CPrintToChatAll("%s{green}%N {default}生成了一个AI的[{red}Spitter{default}]", PLUGIN_TAG, client);
         }
         case 5: {
             ent = SDKCall(g_hSDK_NextBotCreatePlayerBot_Jockey, "Jockey");
@@ -1300,7 +1305,7 @@ int CreateInfectedBot(int client, int type)
             }
             
             InitializeSpecial(ent, vPos, NULL_VECTOR);
-            CPrintToChatAll("%s{green}%N {default}生成一个AI的[{red}Jockey{default}]", PLUGIN_TAG, client);
+            CPrintToChatAll("%s{green}%N {default}生成了一个AI的[{red}Jockey{default}]", PLUGIN_TAG, client);
         }
         case 6: {
             ent = SDKCall(g_hSDK_NextBotCreatePlayerBot_Charger, "Charger");
@@ -1309,7 +1314,7 @@ int CreateInfectedBot(int client, int type)
             }
             
             InitializeSpecial(ent, vPos, NULL_VECTOR);
-            CPrintToChatAll("%s{green}%N {default}生成一个AI的[{red}Charger{default}]", PLUGIN_TAG, client);
+            CPrintToChatAll("%s{green}%N {default}生成了一个AI的[{red}Charger{default}]", PLUGIN_TAG, client);
         }
         case 8: {
             ent = SDKCall(g_hSDK_NextBotCreatePlayerBot_Tank, "Tank");
@@ -1318,7 +1323,7 @@ int CreateInfectedBot(int client, int type)
             }
             
             InitializeSpecial(ent, vPos, NULL_VECTOR);
-            CPrintToChatAll("%s{green}%N {default}生成一个AI的[{red}Tank{default}]", PLUGIN_TAG, client);
+            CPrintToChatAll("%s{green}%N {default}生成了一个AI的[{red}Tank{default}]", PLUGIN_TAG, client);
         }
     }
 
@@ -1343,13 +1348,12 @@ int SpawnCommonInfected(int client, const char[] zombie)
         DispatchSpawn(ent);
         if (strlen(zombie) > 5) {
             SetEntityModel(ent, "models/infected/witch_bride.mdl");
-            CPrintToChatAll("%s{green}%N {default}生成一个[{red}Bride Witch{default}]", PLUGIN_TAG, client);
+            CPrintToChatAll("%s{green}%N {default}生成了一个[{red}Bride Witch{default}]", PLUGIN_TAG, client);
         }
         else {
-            CPrintToChatAll("%s{green}%N {default}生成一个[{red}Witch{default}]", PLUGIN_TAG, client);
+            CPrintToChatAll("%s{green}%N {default}生成了一个[{red}Witch{default}]", PLUGIN_TAG, client);
         }
-    }
-    else {
+    } else {
         ent = CreateEntityByName("infected");
         if (ent == -1) {
             return -1;
@@ -1360,13 +1364,23 @@ int SpawnCommonInfected(int client, const char[] zombie)
             SetEntityModel(ent, g_sUncommonModels[pos]);
         }
 
+        char Inf[16];
+        switch (pos) {
+            case 0: Inf = "防爆僵尸";
+            case 1: Inf = "Ceda僵尸";
+            case 2: Inf = "小丑僵尸";
+            case 3: Inf = "泥人僵尸";
+            case 4: Inf = "工人僵尸";
+            case 5: Inf = "赛车僵尸";
+            case 7: Inf = "普通僵尸";
+        }
         SetEntProp(ent, Prop_Data, "m_nNextThinkTick", RoundToNearest(GetGameTime() / GetTickInterval()) + 5);
         TeleportEntity(ent, vPos);
         if (pos != 6) {
             DispatchSpawn(ent);
             ActivateEntity(ent);
-        }
-        else {
+            CPrintToChatAll("%s{green}%N {default}生成了一个[{red}%s{default}]", PLUGIN_TAG, client, Inf);
+        } else {
             int m_nFallenSurvivor = LoadFromAddress(g_pZombieManager + view_as<Address>(g_iOff_m_nFallenSurvivors), NumberType_Int32);
             float m_timestamp = view_as<float>(LoadFromAddress(g_pZombieManager + view_as<Address>(g_iOff_m_FallenSurvivorTimer) + view_as<Address>(8), NumberType_Int32));
             StoreToAddress(g_pZombieManager + view_as<Address>(g_iOff_m_nFallenSurvivors), 0, NumberType_Int32);
@@ -1375,7 +1389,7 @@ int SpawnCommonInfected(int client, const char[] zombie)
             ActivateEntity(ent);
             StoreToAddress(g_pZombieManager + view_as<Address>(g_iOff_m_nFallenSurvivors), m_nFallenSurvivor + LoadFromAddress(g_pZombieManager + view_as<Address>(g_iOff_m_nFallenSurvivors), NumberType_Int32), NumberType_Int32);
             StoreToAddress(g_pZombieManager + view_as<Address>(g_iOff_m_FallenSurvivorTimer) + view_as<Address>(8), view_as<int>(m_timestamp), NumberType_Int32);
-            CPrintToChatAll("%s{green}%N {default}生成一个[{red}堕落生还者{default}]", PLUGIN_TAG, client);
+            CPrintToChatAll("%s{green}%N {default}生成了一个[{red}堕落生还者{default}]", PLUGIN_TAG, client);
         }
     }
 
