@@ -23,25 +23,118 @@
 			{
 				"linux"		"12"
 			}
+
+			"CTerrorWeapon::GetReloadDurationModifier"
+			{
+				"linux"		"359"
+			}
+
+			"CTerrorGun::GetRateOfFire"
+			{
+				"linux"		"454"
+			}
+
+			"CBaseBeltItem::GetUseTimerDuration"
+			{
+				"linux"		"450"
+			}
+			
+			"CTerrorWeapon::GetDeployDurationModifier"
+			{
+				"linux"		"360"
+			}
+
+			"CTerrorWeapon::Deploy"
+			{
+				"linux"		"265"
+			}
+
+			"CBaseCSGrenade::PrimaryAttack"
+			{
+				"linux"		"283"
+			}
+
+			"CBaseCSGrenade::StartGrenadeThrow"
+			{
+				"linux"		"450"
+			}
+
+			"CTerrorGun::GetRateOfFire_patch"
+			{
+				"linux"		"20"
+			}
+
+			"CPistol::GetRateOfFire_patch"
+			{
+				"linux"		"23"
+			}
+
+			"CRifle_Desert::PrimaryAttack"
+			{
+				"linux"		"283"
+			}
+
+			"CRifle_Desert::BurstTimes_StartOffset"
+			{
+				"linux"		"6132"
+			}
+		}
+
+		"Addresses"
+		{
+			"CTerrorGun::GetRateOfFire"
+			{
+				"linux"
+				{
+					"signature"	"CTerrorGun::GetRateOfFire"
+				}
+			}
+
+			"CPistol::GetRateOfFire"
+			{
+				"linux"
+				{
+					"signature"	"CPistol::GetRateOfFire"
+				}
+			}
+		}
+
+		"Functions"
+		{
+			"CTerrorMeleeWeapon::StartMeleeSwing"
+			{
+				"signature"  "CTerrorMeleeWeapon::StartMeleeSwing"
+				"callconv"  "thiscall"
+				"return"  "int"
+				"this"  "entity"
+				"arguments"
+				{
+					"Player"
+					{
+						"type"    "cbaseentity"
+					}
+					"IsPrimanyAttack"
+					{
+						"type"    "bool"
+					}
+				}
+			}
 		}
 
 		"Signatures"
 		{
-			/* CTerrorPlayer::RoundRespawn(void) */
 			"CTerrorPlayer::RoundRespawn"
 			{
 				"library"	"server"
 				"linux"		"@_ZN13CTerrorPlayer12RoundRespawnEv"
 			}
 
-			/* TerrorNavMesh::GetLastCheckpoint(TerrorNavMesh *__hidden this) */
 			"TerrorNavMesh::GetLastCheckpoint"
 			{
 				"library"	"server"
 				"linux"		"@_ZNK13TerrorNavMesh17GetLastCheckpointEv"
 			}
 
-			/* Checkpoint::GetLargestArea(Checkpoint *__hidden this) */
 			"Checkpoint::GetLargestArea"
 			{
 				"library"	"server"
@@ -88,6 +181,24 @@
 			{
 				"library"	"server"
 				"linux"		"@_Z22NextBotCreatePlayerBotI4TankEPT_PKc"
+			}
+
+			"CTerrorGun::GetRateOfFire"
+			{
+				"library"		"server"
+				"linux"			"@_ZNK10CTerrorGun13GetRateOfFireEv"
+			}
+
+			"CPistol::GetRateOfFire"
+			{
+				"library"		"server"
+				"linux"			"@_ZNK7CPistol13GetRateOfFireEv"
+			}
+
+			"CTerrorMeleeWeapon::StartMeleeSwing"
+			{
+				"library"		"server"
+				"linux"			"@_ZN18CTerrorMeleeWeapon15StartMeleeSwingEP13CTerrorPlayerb"
 			}
 		}
 	}

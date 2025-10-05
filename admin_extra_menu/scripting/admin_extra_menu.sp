@@ -4,6 +4,7 @@
 #include <sdktools>
 #include <sdkhooks>
 #include <colors>
+#include <dhooks>
 #include <left4dhooks>
 #undef REQUIRE_PLUGIN
 #include <adminmenu>
@@ -23,6 +24,19 @@ bool
 
 char
     g_sNamedItem[33][64];
+
+float
+    g_fSpeedUp[33] = {1.0, ...};
+
+static int
+    g_iTempRef,
+    g_DesertBurstOffset = -1,
+    g_iMeleeTempVals[3];
+
+static float
+    g_fTempSpeed,
+    g_fBurstEndTime[33],
+    g_fBurstModifier;
 
 static const char
     g_sTargetTeam[][] = {
@@ -118,16 +132,38 @@ Handle
     g_hSDK_NextBotCreatePlayerBot_Tank;
 
 TopMenuObject
-    TMO_DirectorMenu,   // 导演设置菜单
-    TMO_WeapnoMenu,     // 武器菜单
-    TMO_ItemMenu,       // 物品菜单
-    TMO_TeleportMenu,   // 传送菜单
-    TMO_InfectedMenu,   // 特感菜单
-    TMO_OtherMenu;      // 其他功能
+    TMO_DirectorMenu,       // 导演设置菜单
+    TMO_WeaponMenu,         // 武器菜单
+    TMO_ItemMenu,           // 物品菜单
+    TMO_TeleportMenu,       // 传送菜单
+    TMO_InfectedMenu,       // 特感菜单
+    TMO_OtherMenu,          // 其他功能菜单
+    TMO_WeaponHandlingMenu; // 武器操纵性菜单
 
 Address
     g_pZombieManager,
-    g_pStatsCondition;
+    g_pStatsCondition,
+    CTerrorGun__GetRateOfFire_byte_address,
+    CPistol__GetRateOfFire_byte_address;
+
+static L4D2WeaponType
+    g_iWeaponType[2049];
+
+static DynamicHook
+    hReloadModifier,
+    hRateOfFire,
+    hItemUseDuration,
+    hDeployModifier,
+    hDeployGun,
+    hGrenadePrimaryAttack,
+    hStartThrow,
+    hDesertBurstFire;
+
+enum MeleeSwingInfo {
+    MeleeSwingInfo_Entity = 0,
+    MeleeSwingInfo_Client,
+    MeleeSwingInfo_SwingType
+}
 
 public Plugin myinfo =
 {
@@ -149,6 +185,24 @@ public void OnPluginStart()
 
     if (LibraryExists("adminmenu") && ((top_menu = GetAdminTopMenu()) != INVALID_HANDLE)) {
         OnAdminMenuReady(top_menu);
+    }
+}
+
+public void OnPluginEnd()
+{
+    int byte;
+    if (CPistol__GetRateOfFire_byte_address != Address_Null) {
+        byte = LoadFromAddress(CPistol__GetRateOfFire_byte_address, NumberType_Int8);
+        if (byte == 0xEB) {
+            StoreToAddress(CPistol__GetRateOfFire_byte_address, 0x74, NumberType_Int8);
+        }
+    }	
+
+    if (CTerrorGun__GetRateOfFire_byte_address != Address_Null) {
+        byte = LoadFromAddress(CTerrorGun__GetRateOfFire_byte_address, NumberType_Int8);
+        if (byte == 0xEB) {
+            StoreToAddress(CTerrorGun__GetRateOfFire_byte_address, 0x74, NumberType_Int8);
+        }
     }
 }
 
@@ -178,6 +232,7 @@ void LoadGameData()
     g_hSDK_Checkpoint_GetLargestArea = EndPrepSDKCall();
     PrepLinuxCreateBotCalls(hGameData);
     InitPatchs(hGameData);
+    LoadHookAndPatches(hGameData);
     delete hGameData;
 }
 
@@ -233,6 +288,62 @@ void InitPatchs(GameData hGameData = null)
     g_pStatsCondition = hGameData.GetMemSig("CTerrorPlayer::RoundRespawn");
     g_pStatsCondition += view_as<Address>(iOffset);
     LoadFromAddress(g_pStatsCondition, NumberType_Int8);
+}
+
+void LoadHookAndPatches(GameData hGameData = null)
+{
+    int iOffset = hGameData.GetOffset("CTerrorWeapon::GetReloadDurationModifier");
+    hReloadModifier = new DynamicHook(iOffset, HookType_Entity, ReturnType_Float, ThisPointer_CBaseEntity);
+
+    iOffset = hGameData.GetOffset("CTerrorGun::GetRateOfFire");
+    hRateOfFire = new DynamicHook(iOffset, HookType_Entity, ReturnType_Float, ThisPointer_CBaseEntity);
+
+
+    iOffset = hGameData.GetOffset("CBaseBeltItem::GetUseTimerDuration");
+    hItemUseDuration = new DynamicHook(iOffset, HookType_Entity, ReturnType_Float, ThisPointer_CBaseEntity);
+    
+    iOffset = hGameData.GetOffset("CRifle_Desert::PrimaryAttack");
+    hDesertBurstFire = new DynamicHook(iOffset, HookType_Entity, ReturnType_Void, ThisPointer_CBaseEntity);
+    
+    g_DesertBurstOffset = hGameData.GetOffset("CRifle_Desert::BurstTimes_StartOffset");
+    
+    iOffset = hGameData.GetOffset("CTerrorWeapon::GetDeployDurationModifier");
+    hDeployModifier = new DynamicHook(iOffset, HookType_Entity, ReturnType_Float, ThisPointer_CBaseEntity);
+
+    iOffset = hGameData.GetOffset("CTerrorWeapon::Deploy");
+    hDeployGun = new DynamicHook(iOffset, HookType_Entity, ReturnType_Unknown, ThisPointer_CBaseEntity);
+
+    iOffset = hGameData.GetOffset("CBaseCSGrenade::PrimaryAttack");
+    hGrenadePrimaryAttack = new DynamicHook(iOffset, HookType_Entity, ReturnType_Void, ThisPointer_CBaseEntity);
+
+    iOffset = hGameData.GetOffset("CBaseCSGrenade::StartGrenadeThrow");
+    hStartThrow = new DynamicHook(iOffset, HookType_Entity, ReturnType_Edict, ThisPointer_CBaseEntity);
+
+    DynamicDetour hDetour = DynamicDetour.FromConf(hGameData, "CTerrorMeleeWeapon::StartMeleeSwing");
+    hDetour.Enable(Hook_Pre, OnMeleeSwingPre);
+    hDetour.Enable(Hook_Post, OnMeleeSwingpPost);
+
+    Address patch = hGameData.GetAddress("CTerrorGun::GetRateOfFire");
+    if (patch) {
+        int offset = hGameData.GetOffset("CTerrorGun::GetRateOfFire_patch");
+        if (offset != -1) {
+            if (LoadFromAddress(patch + view_as<Address>(offset), NumberType_Int8) == 0x74) {
+                CTerrorGun__GetRateOfFire_byte_address = patch + view_as<Address>(offset);
+                StoreToAddress(CTerrorGun__GetRateOfFire_byte_address, 0xEB, NumberType_Int8);
+            }
+        }
+    }
+
+    patch = GameConfGetAddress(hGameData, "CPistol::GetRateOfFire");
+    if (patch) {
+        int offset = hGameData.GetOffset("CPistol::GetRateOfFire_patch");
+        if (offset != -1) {
+            if (LoadFromAddress(patch + view_as<Address>(offset), NumberType_Int8) == 0x74) {
+                CPistol__GetRateOfFire_byte_address = patch + view_as<Address>(offset);
+                StoreToAddress(CPistol__GetRateOfFire_byte_address, 0xEB, NumberType_Int8);
+            }
+        }
+    }
 }
 
 void StatsConditionPatch(bool patch)
@@ -327,11 +438,12 @@ public void OnAdminMenuReady(Handle menu)
     }
 
     TMO_DirectorMenu = AddToTopMenu(admin_menu, "TMO_DirectorMenu", TopMenuObject_Item, Menu_TopItemHandler, AEM_Menu, "TMO_DirectorMenu", ADMFLAG_CHEATS);
-    TMO_WeapnoMenu = AddToTopMenu(admin_menu, "TMO_WeapnoMenu", TopMenuObject_Item, Menu_TopItemHandler, AEM_Menu, "TMO_WeapnoMenu", ADMFLAG_CHEATS);
+    TMO_WeaponMenu = AddToTopMenu(admin_menu, "TMO_WeaponMenu", TopMenuObject_Item, Menu_TopItemHandler, AEM_Menu, "TMO_WeaponMenu", ADMFLAG_CHEATS);
     TMO_ItemMenu = AddToTopMenu(admin_menu, "TMO_ItemMenu", TopMenuObject_Item, Menu_TopItemHandler, AEM_Menu, "TMO_ItemMenu", ADMFLAG_CHEATS);
     TMO_TeleportMenu = AddToTopMenu(admin_menu, "TMO_TeleportMenu", TopMenuObject_Item, Menu_TopItemHandler, AEM_Menu, "TMO_TeleportMenu", ADMFLAG_CHEATS);
     TMO_InfectedMenu = AddToTopMenu(admin_menu, "TMO_InfectedMenu", TopMenuObject_Item, Menu_TopItemHandler, AEM_Menu, "TMO_InfectedMenu", ADMFLAG_CHEATS);
     TMO_OtherMenu = AddToTopMenu(admin_menu, "TMO_OtherMenu", TopMenuObject_Item, Menu_TopItemHandler, AEM_Menu, "TMO_OtherMenu", ADMFLAG_CHEATS);
+    TMO_WeaponHandlingMenu = AddToTopMenu(admin_menu, "TMO_WeaponHandlingMenu", TopMenuObject_Item, Menu_TopItemHandler, AEM_Menu, "TMO_WeaponHandlingMenu", ADMFLAG_CHEATS);
 }
 
 void Menu_TopItemHandler(TopMenu topmenu, TopMenuAction action, TopMenuObject topobj_id, int client, char[] buffer, int maxlength)
@@ -339,41 +451,34 @@ void Menu_TopItemHandler(TopMenu topmenu, TopMenuAction action, TopMenuObject to
     if (action == TopMenuAction_DisplayOption) {
         if (topobj_id == TMO_DirectorMenu) {
             Format(buffer, maxlength, "导演指令");
-        }
-        else if (topobj_id == TMO_WeapnoMenu) {
+        } else if (topobj_id == TMO_WeaponMenu) {
             Format(buffer, maxlength, "生成武器");
-        }
-        else if (topobj_id == TMO_ItemMenu) {
+        } else if (topobj_id == TMO_ItemMenu) {
             Format(buffer, maxlength, "生成物品");
-        }
-        else if (topobj_id == TMO_TeleportMenu) {
+        } else if (topobj_id == TMO_TeleportMenu) {
             Format(buffer, maxlength, "传送指令");
-        }
-        else if (topobj_id == TMO_InfectedMenu) {
+        } else if (topobj_id == TMO_InfectedMenu) {
             Format(buffer, maxlength, "生成特感");
-        }
-        else if (topobj_id == TMO_OtherMenu) {
+        } else if (topobj_id == TMO_OtherMenu) {
             Format(buffer, maxlength, "其他功能");
+        } else if (topobj_id == TMO_WeaponHandlingMenu) {
+            Format(buffer, maxlength, "武器操纵");
         }
-    }
-    else if (action == TopMenuAction_SelectOption) {
+    } else if (action == TopMenuAction_SelectOption) {
         if (topobj_id == TMO_DirectorMenu) {
             Menu_CreateDirectorMenu(client);
-        }
-        else if (topobj_id == TMO_WeapnoMenu) {
+        } else if (topobj_id == TMO_WeaponMenu) {
             Menu_CreateWeaponMenu(client);
-        }
-        else if (topobj_id == TMO_ItemMenu) {
+        } else if (topobj_id == TMO_ItemMenu) {
             Menu_CreateItemMenu(client, 0);
-        }
-        else if (topobj_id == TMO_TeleportMenu) {
+        } else if (topobj_id == TMO_TeleportMenu) {
             Menu_CreateTeleportMenu(client, 0);
-        }
-        else if (topobj_id == TMO_InfectedMenu) {
+        } else if (topobj_id == TMO_InfectedMenu) {
             Menu_CreateInfectedMenu(client);
-        }
-        else if (topobj_id == TMO_OtherMenu) {
+        } else if (topobj_id == TMO_OtherMenu) {
             Menu_CreateOtherMenu(client, 0);
+        } else if (topobj_id == TMO_WeaponHandlingMenu) {
+            Menu_CreateWeaponHandlingMenu(client, 0);
         }
     }
 }
@@ -395,6 +500,7 @@ public void OnClientPutInServer(int client)
 
 public void OnClientDisconnect(int client)
 {
+    g_fSpeedUp[client] = 1.0;
     g_bGodMode[client] = false;
     g_bIgnoreAbility[client] = false;
 }
@@ -2515,4 +2621,456 @@ int GetIdlePlayerOfBot(int client)
 bool IsValidClient(int client)
 {
 	return (client > 0 && client <= MaxClients && IsClientInGame(client));
+}
+// Weapon Handling API
+enum L4D2WeaponType {
+    L4D2WeaponType_Unknown = 0,
+    L4D2WeaponType_Pistol,
+    L4D2WeaponType_Magnum,
+    L4D2WeaponType_Rifle,
+    L4D2WeaponType_RifleAk47,
+    L4D2WeaponType_RifleDesert,
+    L4D2WeaponType_RifleM60,
+    L4D2WeaponType_RifleSg552,
+    L4D2WeaponType_HuntingRifle,
+    L4D2WeaponType_SniperAwp,
+    L4D2WeaponType_SniperMilitary,
+    L4D2WeaponType_SniperScout,
+    L4D2WeaponType_SMG,
+    L4D2WeaponType_SMGSilenced,
+    L4D2WeaponType_SMGMp5,
+    L4D2WeaponType_Autoshotgun,
+    L4D2WeaponType_AutoshotgunSpas,
+    L4D2WeaponType_Pumpshotgun,
+    L4D2WeaponType_PumpshotgunChrome,
+    L4D2WeaponType_Molotov,
+    L4D2WeaponType_Pipebomb,
+    L4D2WeaponType_FirstAid,
+    L4D2WeaponType_Pills,
+    L4D2WeaponType_Gascan,
+    L4D2WeaponType_Oxygentank,
+    L4D2WeaponType_Propanetank,
+    L4D2WeaponType_Vomitjar,
+    L4D2WeaponType_Adrenaline,
+    L4D2WeaponType_Chainsaw,
+    L4D2WeaponType_Defibrilator,
+    L4D2WeaponType_GrenadeLauncher,
+    L4D2WeaponType_Melee,
+    L4D2WeaponType_UpgradeFire,
+    L4D2WeaponType_UpgradeExplosive,
+    L4D2WeaponType_BoomerClaw,
+    L4D2WeaponType_ChargerClaw,
+    L4D2WeaponType_HunterClaw,
+    L4D2WeaponType_JockeyClaw,
+    L4D2WeaponType_SmokerClaw,
+    L4D2WeaponType_SpitterClaw,
+    L4D2WeaponType_TankClaw,
+    L4D2WeaponType_Gnome
+}
+
+StringMap CreateWeaponClassnameHashMap(StringMap hWeaponClassnameHashMap)
+{
+    hWeaponClassnameHashMap = CreateTrie();
+    hWeaponClassnameHashMap.SetValue("weapon_pistol", L4D2WeaponType_Pistol);
+    hWeaponClassnameHashMap.SetValue("weapon_pistol_magnum", L4D2WeaponType_Magnum);
+    hWeaponClassnameHashMap.SetValue("weapon_rifle", L4D2WeaponType_Rifle);
+    hWeaponClassnameHashMap.SetValue("weapon_rifle_ak47", L4D2WeaponType_RifleAk47);
+    hWeaponClassnameHashMap.SetValue("weapon_rifle_desert", L4D2WeaponType_RifleDesert);
+    hWeaponClassnameHashMap.SetValue("weapon_rifle_m60", L4D2WeaponType_RifleM60);
+    hWeaponClassnameHashMap.SetValue("weapon_rifle_sg552", L4D2WeaponType_RifleSg552);
+    hWeaponClassnameHashMap.SetValue("weapon_hunting_rifle", L4D2WeaponType_HuntingRifle);
+    hWeaponClassnameHashMap.SetValue("weapon_sniper_awp", L4D2WeaponType_SniperAwp);
+    hWeaponClassnameHashMap.SetValue("weapon_sniper_military", L4D2WeaponType_SniperMilitary);
+    hWeaponClassnameHashMap.SetValue("weapon_sniper_scout", L4D2WeaponType_SniperScout);
+    hWeaponClassnameHashMap.SetValue("weapon_smg", L4D2WeaponType_SMG);
+    hWeaponClassnameHashMap.SetValue("weapon_smg_silenced", L4D2WeaponType_SMGSilenced);
+    hWeaponClassnameHashMap.SetValue("weapon_smg_mp5", L4D2WeaponType_SMGMp5);
+    hWeaponClassnameHashMap.SetValue("weapon_autoshotgun", L4D2WeaponType_Autoshotgun);
+    hWeaponClassnameHashMap.SetValue("weapon_shotgun_spas", L4D2WeaponType_AutoshotgunSpas);
+    hWeaponClassnameHashMap.SetValue("weapon_pumpshotgun", L4D2WeaponType_Pumpshotgun);
+    hWeaponClassnameHashMap.SetValue("weapon_shotgun_chrome", L4D2WeaponType_PumpshotgunChrome);
+    hWeaponClassnameHashMap.SetValue("weapon_molotov", L4D2WeaponType_Molotov);
+    hWeaponClassnameHashMap.SetValue("weapon_pipe_bomb", L4D2WeaponType_Pipebomb);
+    hWeaponClassnameHashMap.SetValue("weapon_first_aid_kit", L4D2WeaponType_FirstAid);
+    hWeaponClassnameHashMap.SetValue("weapon_pain_pills", L4D2WeaponType_Pills);
+    hWeaponClassnameHashMap.SetValue("weapon_gascan", L4D2WeaponType_Gascan);
+    hWeaponClassnameHashMap.SetValue("weapon_oxygentank", L4D2WeaponType_Oxygentank);
+    hWeaponClassnameHashMap.SetValue("weapon_propanetank", L4D2WeaponType_Propanetank);
+    hWeaponClassnameHashMap.SetValue("weapon_vomitjar", L4D2WeaponType_Vomitjar);
+    hWeaponClassnameHashMap.SetValue("weapon_adrenaline", L4D2WeaponType_Adrenaline);
+    hWeaponClassnameHashMap.SetValue("weapon_chainsaw", L4D2WeaponType_Chainsaw);
+    hWeaponClassnameHashMap.SetValue("weapon_defibrillator", L4D2WeaponType_Defibrilator);
+    hWeaponClassnameHashMap.SetValue("weapon_grenade_launcher", L4D2WeaponType_GrenadeLauncher);
+    hWeaponClassnameHashMap.SetValue("weapon_melee", L4D2WeaponType_Melee);
+    hWeaponClassnameHashMap.SetValue("weapon_upgradepack_incendiary", L4D2WeaponType_UpgradeFire);
+    hWeaponClassnameHashMap.SetValue("weapon_upgradepack_explosive", L4D2WeaponType_UpgradeExplosive);
+    hWeaponClassnameHashMap.SetValue("weapon_boomer_claw", L4D2WeaponType_BoomerClaw);
+    hWeaponClassnameHashMap.SetValue("weapon_charger_claw", L4D2WeaponType_ChargerClaw);
+    hWeaponClassnameHashMap.SetValue("weapon_hunter_claw", L4D2WeaponType_HunterClaw);
+    hWeaponClassnameHashMap.SetValue("weapon_jockey_claw", L4D2WeaponType_JockeyClaw);
+    hWeaponClassnameHashMap.SetValue("weapon_smoker_claw", L4D2WeaponType_SmokerClaw);
+    hWeaponClassnameHashMap.SetValue("weapon_spitter_claw", L4D2WeaponType_SpitterClaw);
+    hWeaponClassnameHashMap.SetValue("weapon_tank_claw", L4D2WeaponType_TankClaw);
+    hWeaponClassnameHashMap.SetValue("weapon_gnome", L4D2WeaponType_Gnome);
+
+    return hWeaponClassnameHashMap;
+}
+
+L4D2WeaponType GetWeaponTypeFromClassname(const char[] classname)
+{
+    static StringMap hWeaponClassnameHashMap;
+    if (hWeaponClassnameHashMap == INVALID_HANDLE) {
+        hWeaponClassnameHashMap = CreateWeaponClassnameHashMap(hWeaponClassnameHashMap);
+    }
+
+    static L4D2WeaponType eWeaponType;
+    if (!hWeaponClassnameHashMap.GetValue(classname, eWeaponType)) {
+        return L4D2WeaponType_Unknown;
+    }
+
+    return eWeaponType;
+}
+
+public void OnEntityCreated(int entity, const char[] classname)
+{
+    if (entity < 1 || classname[0] != 'w') {
+        return;
+    }
+
+    g_iWeaponType[entity] = GetWeaponTypeFromClassname(classname);
+    switch (g_iWeaponType[entity]) {
+        case L4D2WeaponType_AutoshotgunSpas, L4D2WeaponType_PumpshotgunChrome, 
+            L4D2WeaponType_Autoshotgun, L4D2WeaponType_Pumpshotgun, L4D2WeaponType_GrenadeLauncher, 
+            L4D2WeaponType_HuntingRifle, L4D2WeaponType_Magnum, L4D2WeaponType_Rifle, 
+            L4D2WeaponType_SMG, L4D2WeaponType_RifleSg552,
+            L4D2WeaponType_Pistol, L4D2WeaponType_RifleAk47, L4D2WeaponType_SMGMp5, 
+            L4D2WeaponType_SMGSilenced, L4D2WeaponType_SniperAwp, L4D2WeaponType_SniperMilitary, 
+            L4D2WeaponType_SniperScout, L4D2WeaponType_RifleM60: {
+            hReloadModifier.HookEntity(Hook_Post, entity, OnReloadModifier);
+            hRateOfFire.HookEntity(Hook_Post, entity, OnGetRateOfFire);
+            hDeployModifier.HookEntity(Hook_Post, entity, OnDeployModifier);
+            hDeployGun.HookEntity(Hook_Post, entity, OnDeployGun);
+        }
+        case L4D2WeaponType_RifleDesert: {
+            hReloadModifier.HookEntity(Hook_Post, entity, OnReloadModifier);
+            hRateOfFire.HookEntity(Hook_Post, entity, OnGetRateOfFire);
+            hDeployModifier.HookEntity(Hook_Post, entity, OnDeployModifier);
+            hDeployGun.HookEntity(Hook_Post, entity, OnDeployGun);
+            hDesertBurstFire.HookEntity(Hook_Post, entity, OnGetRateOfFireBurst);
+        }
+        case L4D2WeaponType_Pills, L4D2WeaponType_Adrenaline: {
+            hItemUseDuration.HookEntity(Hook_Post, entity, OnGetRateOfFire);
+            hDeployModifier.HookEntity(Hook_Post, entity, OnDeployModifier);
+            hDeployGun.HookEntity(Hook_Post, entity, OnDeployGun);
+        }
+        case L4D2WeaponType_Melee, L4D2WeaponType_Defibrilator, L4D2WeaponType_FirstAid, L4D2WeaponType_UpgradeFire, L4D2WeaponType_UpgradeExplosive: {
+            hDeployModifier.HookEntity(Hook_Post, entity, OnDeployModifier);
+            hDeployGun.HookEntity(Hook_Post, entity, OnDeployGun);
+        }
+        case L4D2WeaponType_Molotov, L4D2WeaponType_Pipebomb, L4D2WeaponType_Vomitjar: {
+            hGrenadePrimaryAttack.HookEntity(Hook_Post, entity, OnReadyingThrow);
+            hStartThrow.HookEntity(Hook_Post, entity, OnStartThrow);
+            hDeployModifier.HookEntity(Hook_Post, entity, OnDeployModifier);
+            hDeployGun.HookEntity(Hook_Post, entity, OnDeployGun);
+        }
+    }
+}
+// MRESReturn
+MRESReturn OnMeleeSwingPre(int pThis, DHookReturn hReturn, DHookParam hParams)
+{
+    g_iMeleeTempVals[MeleeSwingInfo_Entity] = pThis;
+    g_iMeleeTempVals[MeleeSwingInfo_Client] = hParams.Get(1);
+    g_iMeleeTempVals[MeleeSwingInfo_SwingType] = hParams.Get(2);
+
+    return MRES_Ignored;
+}
+
+MRESReturn OnMeleeSwingpPost()
+{
+    if (!g_iMeleeTempVals[MeleeSwingInfo_SwingType]) {
+        return MRES_Ignored;
+    }
+
+    int iWeapon = g_iMeleeTempVals[MeleeSwingInfo_Entity];
+    float fSpeed = SpeedModifier(g_iMeleeTempVals[MeleeSwingInfo_Client], 1.0);
+    fSpeed = ClampFloatAboveZero(fSpeed);
+    float flGameTime, flNextTimeCalc;
+    flGameTime = GetGameTime();
+    flNextTimeCalc = (((GetEntPropFloat(iWeapon, Prop_Send, "m_flNextPrimaryAttack") - flGameTime) / fSpeed) + flGameTime);
+    SetEntPropFloat(iWeapon, Prop_Send, "m_flPlaybackRate", fSpeed);
+    SetEntPropFloat(iWeapon, Prop_Send, "m_flNextPrimaryAttack", flNextTimeCalc);
+
+    return MRES_Ignored;
+}
+
+void PostThinkOnce(int iClient)
+{
+	SDKUnhook(iClient, SDKHook_PostThink, PostThinkOnce);
+	int iWeapon = GetEntPropEnt(iClient, Prop_Data, "m_hActiveWeapon");
+	if (!IsValidEntRef(g_iTempRef) || iWeapon != EntRefToEntIndex(g_iTempRef)) {
+		return;
+    }
+	
+	SetEntPropFloat(iWeapon, Prop_Send, "m_flPlaybackRate", g_fTempSpeed);
+}
+
+MRESReturn OnStartThrow(int pThis, DHookReturn hReturn)
+{
+    int iClient = GetEntPropEnt(pThis, Prop_Send, "m_hOwnerEntity");
+    if (iClient < 1) {
+        return MRES_Ignored;
+    }
+
+    float fSpeed = SpeedModifier(iClient, 1.0);
+    fSpeed = ClampFloatAboveZero(fSpeed);
+    float flGameTime, flNextTimeCalc;
+    flGameTime = GetGameTime();
+    flNextTimeCalc = (((GetEntPropFloat(pThis, Prop_Send, "m_fThrowTime") - flGameTime) / fSpeed) + flGameTime);
+    SetEntPropFloat(pThis, Prop_Send, "m_fThrowTime", flNextTimeCalc);
+    g_iTempRef = EntIndexToEntRef(pThis);
+    g_fTempSpeed = fSpeed;
+    SDKHook(iClient, SDKHook_PostThink, PostThinkOnce);
+
+    return MRES_Ignored;
+}
+
+MRESReturn OnReadyingThrow(int pThis)
+{
+    static int iClient;
+    iClient = GetEntPropEnt(pThis, Prop_Send, "m_hOwnerEntity");
+    if (iClient < 1) {
+        return MRES_Ignored;
+    }
+
+    static float fSpeed;
+    fSpeed = SpeedModifier(iClient, 1.0);
+    fSpeed = ClampFloatAboveZero(fSpeed);
+    static float flGameTime;
+    static float flNextTimeCalc;
+    flGameTime = GetGameTime();
+    flNextTimeCalc = (((GetEntPropFloat(pThis, Prop_Send, "m_flNextPrimaryAttack") - flGameTime) / fSpeed) + flGameTime);
+    SetEntPropFloat(pThis, Prop_Send, "m_flPlaybackRate", fSpeed);
+    SetEntPropFloat(pThis, Prop_Send, "m_flNextPrimaryAttack", flNextTimeCalc);
+    SetEntPropFloat(iClient, Prop_Send, "m_flNextAttack", flNextTimeCalc);
+
+    return MRES_Ignored;
+}
+
+MRESReturn OnReloadModifier(int pThis, DHookReturn hReturn)
+{
+    int iClient = GetEntPropEnt(pThis, Prop_Send, "m_hOwnerEntity");
+    if (iClient < 1) {
+        return MRES_Ignored;
+    }
+
+    float fSpeed = SpeedModifier(iClient, 1.0);
+    float fReloadSpeed = hReturn.Value;
+    fReloadSpeed = ClampFloatAboveZero(fReloadSpeed / fSpeed);
+    hReturn.Value = fReloadSpeed;
+
+    return MRES_Override;
+}
+
+MRESReturn OnGetRateOfFire(int pThis, DHookReturn hReturn)
+{
+    static float fRateOfFire, fRateOfFireModifier;
+    static int iClient;
+    iClient = GetEntPropEnt(pThis, Prop_Send, "m_hOwnerEntity");
+    if (iClient < 1) {
+        return MRES_Ignored;
+    }
+        
+    fRateOfFireModifier = SpeedModifier(iClient, 1.0);
+    fRateOfFire = hReturn.Value;
+    if (g_iWeaponType[pThis] == L4D2WeaponType_Pistol && GetEntProp(pThis, Prop_Send, "m_isDualWielding", 1)) {
+        fRateOfFire = 0.075000003;
+    }
+
+    fRateOfFire = ClampFloatAboveZero(fRateOfFire / fRateOfFireModifier);
+    if (g_iWeaponType[pThis] == L4D2WeaponType_RifleDesert) {
+        g_fBurstModifier = fRateOfFireModifier;
+    }
+
+    hReturn.Value = fRateOfFire;
+    SetEntPropFloat(pThis, Prop_Send, "m_flPlaybackRate", fRateOfFireModifier);
+
+    return MRES_Override;
+}
+
+MRESReturn OnGetRateOfFireBurst(int pThis, DHookReturn hReturn)
+{
+    static int iClient;
+    iClient = GetEntPropEnt(pThis, Prop_Send, "m_hOwnerEntity");
+    if (iClient < 1) {
+        return MRES_Ignored;
+    }
+
+    float flValveBurstData = GetEntDataFloat(pThis, g_DesertBurstOffset + 8);
+    if (flValveBurstData == g_fBurstEndTime[iClient]) {
+        return MRES_Ignored;
+    }
+
+    float fTime = GetGameTime();
+    flValveBurstData = flValveBurstData - fTime;
+    flValveBurstData = ClampFloatAboveZero(flValveBurstData / g_fBurstModifier);
+    g_fBurstEndTime[iClient] = flValveBurstData + fTime;
+    SetEntDataFloat(pThis, g_DesertBurstOffset + 8, g_fBurstEndTime[iClient]);
+
+    return MRES_Ignored;
+}
+
+MRESReturn OnDeployModifier(int pThis, DHookReturn hReturn)
+{
+    g_fTempSpeed = 1.0;
+    int iClient = GetEntPropEnt(pThis, Prop_Send, "m_hOwnerEntity");
+    if (iClient < 1) {
+        return MRES_Ignored;
+    }
+
+    float fCurrentSpeed = hReturn.Value, fSpeed = SpeedModifier(iClient, 1.0);
+    fSpeed = ClampFloatAboveZero(fSpeed);
+    g_fTempSpeed = g_fTempSpeed * fSpeed;
+    hReturn.Value = ClampFloatAboveZero(fCurrentSpeed / fSpeed);
+    return MRES_Override;
+}
+
+MRESReturn OnDeployGun(int pThis)
+{
+    SetEntPropFloat(pThis, Prop_Send, "m_flPlaybackRate", g_fTempSpeed);
+    return MRES_Ignored;
+}
+
+static float ClampFloatAboveZero(float fSpeed)
+{
+    return fSpeed <= 0.0 ? 0.00001 : fSpeed;
+}
+
+static bool IsValidEntRef(int iEntRef)
+{
+    return (iEntRef != 0 && EntRefToEntIndex(iEntRef) != INVALID_ENT_REFERENCE);
+}
+
+float SpeedModifier(int client, float speedmodifier)
+{
+	if (g_fSpeedUp[client] > 1.0) {
+		speedmodifier *= g_fSpeedUp[client];
+    }
+
+	return speedmodifier;
+}
+
+void Menu_CreateWeaponHandlingMenu(int client, int item)
+{
+    Menu menu = new Menu(WeaponHandling_MenuHandler);
+    menu.SetTitle("武器操纵倍率");
+    menu.AddItem("1.0", "1.0[默认]");
+    menu.AddItem("1.1", "1.1x");
+    menu.AddItem("1.2", "1.2x");
+    menu.AddItem("1.3", "1.3x");
+    menu.AddItem("1.4", "1.4x");
+    menu.AddItem("1.5", "1.5x");
+    menu.AddItem("1.6", "1.6x");
+    menu.AddItem("1.7", "1.7x");
+    menu.AddItem("1.8", "1.8x");
+    menu.AddItem("1.9", "1.9x");
+    menu.AddItem("2.0", "2.0x");
+    menu.AddItem("2.1", "2.1x");
+    menu.AddItem("2.2", "2.2x");
+    menu.AddItem("2.3", "2.3x");
+    menu.AddItem("2.4", "2.4x");
+    menu.AddItem("2.5", "2.5x");
+    menu.AddItem("2.6", "2.6x");
+    menu.AddItem("2.7", "2.7x");
+    menu.AddItem("2.8", "2.8x");
+    menu.AddItem("2.9", "2.9x");
+    menu.AddItem("3.0", "3.0x");
+    menu.AddItem("3.1", "3.1x");
+    menu.AddItem("3.2", "3.2x");
+    menu.AddItem("3.3", "3.3x");
+    menu.AddItem("3.4", "3.4x");
+    menu.AddItem("3.5", "3.5x");
+
+    menu.ExitBackButton = true;
+    menu.DisplayAt(client, item, MENU_TIME_FOREVER);
+}
+
+int WeaponHandling_MenuHandler(Menu menu, MenuAction action, int client, int param2)
+{
+    switch (action) {
+        case MenuAction_Select: {
+            char item[12];
+            menu.GetItem(param2, item, sizeof(item));
+            g_iSelection[client] = menu.Selection;
+            HandlingWeapon(client, item);
+        }
+        case MenuAction_End: delete menu;
+        case MenuAction_Cancel: {
+            if (param2 == MenuCancel_ExitBack && admin_menu != INVALID_HANDLE) {
+                DisplayTopMenu(admin_menu, client, TopMenuPosition_LastCategory);
+            }
+        }
+    }
+
+    return 0;
+}
+
+void HandlingWeapon(int client, const char[] speedUp)
+{
+    char info[32],str[2][16], disp[MAX_NAME_LENGTH];
+    Menu menu = new Menu(WeaponEnhanced_MenuHandler);
+    menu.SetTitle("目标玩家");
+    strcopy(str[0], sizeof(str[]), speedUp);
+    strcopy(str[1], sizeof(str[]), "a");
+    ImplodeStrings(str, sizeof str, "|", info, sizeof info);
+    menu.AddItem(info, "所有");
+    for (int i = 1; i <= MaxClients; i++) {
+        if (IsClientInGame(i)) {
+            FormatEx(str[1], sizeof str[], "%d", GetClientUserId(i));
+            FormatEx(disp, sizeof disp, "[%.1fx] - %N", g_fSpeedUp[i], i);
+            ImplodeStrings(str, sizeof str, "|", info, sizeof info);
+            menu.AddItem(info, disp);
+        }
+    }
+
+    menu.ExitBackButton = true;
+    menu.Display(client, MENU_TIME_FOREVER);
+}
+
+int WeaponEnhanced_MenuHandler(Menu menu, MenuAction action, int client, int param2)
+{
+    switch (action) {
+        case MenuAction_Select: {
+            char item[12], info[2][16];
+            menu.GetItem(param2, item, sizeof(item));
+            ExplodeString(item, "|", info, sizeof(info), sizeof(info[]));
+            float fSpeedUp = StringToFloat(info[0]);
+            if (info[1][0] == 'a') {
+                for (int i = 1; i <= MaxClients; i++) {
+                    if (IsClientInGame(i)) {
+                        g_fSpeedUp[i] = fSpeedUp;
+                    }
+                }
+
+                CPrintToChatAll("%s{green}%N {default}将 {green}所有玩家 {default}的武器操纵性设置为 {blue}%.1f {default}x", PLUGIN_TAG, client, fSpeedUp);
+            } else {
+                int target = GetClientOfUserId(StringToInt(info[1]));
+                if (target && IsClientInGame(target)) {
+                    g_fSpeedUp[target] = fSpeedUp;
+                    CPrintToChatAll("%s{green}%N {default}将 {green}%N {default}的武器操纵性设置为 {blue}%.1f {default}x", PLUGIN_TAG, client, target, fSpeedUp);
+                } else {
+                    CPrintToChatAll("%s{default}目标玩家已失效!", PLUGIN_TAG);
+                }
+            }
+
+            Menu_CreateWeaponHandlingMenu(client, g_iSelection[client]);
+        }
+        case MenuAction_Cancel: {
+            if (param2 == MenuCancel_ExitBack) {
+                Menu_CreateWeaponHandlingMenu(client, g_iSelection[client]);
+            }
+        }
+        case MenuAction_End: delete menu;
+    }
+
+    return 0;
 }
