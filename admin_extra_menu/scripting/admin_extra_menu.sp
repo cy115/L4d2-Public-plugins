@@ -2886,6 +2886,10 @@ MRESReturn OnGetRateOfFire(int pThis, DHookReturn hReturn)
         fRateOfFire = 0.075000003;
     }
 
+    if (GetEntProp(iClient, Prop_Send, "m_isIncapacitated", 1)) {
+		fRateOfFire = 0.3;
+	}
+
     fRateOfFire = ClampFloatAboveZero(fRateOfFire / fRateOfFireModifier);
     if (g_iWeaponType[pThis] == L4D2WeaponType_RifleDesert) {
         g_fBurstModifier = fRateOfFireModifier;
