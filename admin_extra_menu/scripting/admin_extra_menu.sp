@@ -9,7 +9,7 @@
 #undef REQUIRE_PLUGIN
 #include <adminmenu>
 
-#define PLUGIN_TAG "{olive}[{default}AEM{olive}] "
+#define PLUGIN_TAG "{O}[{default}AEM{O}] "
 
 int
     g_iFunction[33],
@@ -297,7 +297,6 @@ void LoadHookAndPatches(GameData hGameData = null)
 
     iOffset = hGameData.GetOffset("CTerrorGun::GetRateOfFire");
     hRateOfFire = new DynamicHook(iOffset, HookType_Entity, ReturnType_Float, ThisPointer_CBaseEntity);
-
 
     iOffset = hGameData.GetOffset("CBaseBeltItem::GetUseTimerDuration");
     hItemUseDuration = new DynamicHook(iOffset, HookType_Entity, ReturnType_Float, ThisPointer_CBaseEntity);
@@ -856,7 +855,7 @@ int Life_MenuHandler(Menu menu, MenuAction action, int client, int param2)
                         CheatCommand(i, "give health");
                     }
 
-                    CPrintToChatAll("%s{green}%N {default}给 {green}所有生还/特感 {default}刷了一份 {olive}生命值{default}.", PLUGIN_TAG, client);
+                    CPrintToChatAll("%s{green}%N {default}给 {green}所有生还/特感 {default}刷了一份 {O}生命值{default}.", PLUGIN_TAG, client);
                     Menu_CreateItemMenu(client, 0);
                 }
                 case 'i': {
@@ -867,7 +866,7 @@ int Life_MenuHandler(Menu menu, MenuAction action, int client, int param2)
                         CheatCommand(i, "give health");
                     }
 
-                    CPrintToChatAll("%s{green}%N {default}给 {red}所有特感 {default}刷了一份 {olive}生命值{default}.", PLUGIN_TAG, client);
+                    CPrintToChatAll("%s{green}%N {default}给 {red}所有特感 {default}刷了一份 {O}生命值{default}.", PLUGIN_TAG, client);
                     Menu_CreateItemMenu(client, 0);
                 }
                 case 's': {
@@ -879,14 +878,14 @@ int Life_MenuHandler(Menu menu, MenuAction action, int client, int param2)
                         CheatCommand(i, "give health");
                     }
 
-                    CPrintToChatAll("%s{green}%N {default}给 {blue}所有生还 {default}刷了一份 {olive}生命值{default}.", PLUGIN_TAG, client);
+                    CPrintToChatAll("%s{green}%N {default}给 {blue}所有生还 {default}刷了一份 {O}生命值{default}.", PLUGIN_TAG, client);
                     Menu_CreateItemMenu(client, 0);
                 }
                 default: {
                     int target = GetClientOfUserId(StringToInt(item));
                     if (IsValidClient(target) && IsPlayerAlive(target)) {
                         CheatCommand(target, "give health");
-                        CPrintToChatAll("%s{green}%N {default}给 {green}%N {default}刷了一份 {olive}生命值{default}.", PLUGIN_TAG, client, target);
+                        CPrintToChatAll("%s{green}%N {default}给 {green}%N {default}刷了一份 {O}生命值{default}.", PLUGIN_TAG, client, target);
                     }
                 }
             }
@@ -2028,7 +2027,7 @@ int RespawnPlayer_MenuHandler(Menu menu, MenuAction action, int client, int para
                         TeleportToSurvivor(i);
                     }
 
-                    CPrintToChatAll("%s{green}%N {olive}复活所有了生还 {default}.", PLUGIN_TAG, client);
+                    CPrintToChatAll("%s{green}%N {O}复活所有了生还 {default}.", PLUGIN_TAG, client);
                     Menu_CreateOtherMenu(client, 0);
             }
             else {
@@ -2039,7 +2038,7 @@ int RespawnPlayer_MenuHandler(Menu menu, MenuAction action, int client, int para
                     StatsConditionPatch(false);
                     TeleportToSurvivor(target);
                     RespawnPlayer(client, menu.Selection);
-                    CPrintToChatAll("%s{green}%N {olive}复活了 {blue}%N {default}.", PLUGIN_TAG, client, target);
+                    CPrintToChatAll("%s{green}%N {O}复活了 {blue}%N {default}.", PLUGIN_TAG, client, target);
                 }
             }
         }
@@ -2164,7 +2163,7 @@ void SlayAllSI(int client)
         }
     }
 
-    CPrintToChatAll("%s{green}%N {olive}处死所有特感 {default}.", PLUGIN_TAG, client);
+    CPrintToChatAll("%s{green}%N {O}处死所有特感 {default}.", PLUGIN_TAG, client);
     Menu_CreateOtherMenu(client, 0);
 }
 
@@ -2176,7 +2175,7 @@ void SlayAllSur(int client)
         }
     }
 
-    CPrintToChatAll("%s{green}%N {olive}处死所有生还 {default}.", PLUGIN_TAG, client);
+    CPrintToChatAll("%s{green}%N {O}处死所有生还 {default}.", PLUGIN_TAG, client);
     Menu_CreateOtherMenu(client, 7);
 }
 
@@ -2742,8 +2741,8 @@ public void OnEntityCreated(int entity, const char[] classname)
         case L4D2WeaponType_AutoshotgunSpas, L4D2WeaponType_PumpshotgunChrome, 
             L4D2WeaponType_Autoshotgun, L4D2WeaponType_Pumpshotgun, L4D2WeaponType_GrenadeLauncher, 
             L4D2WeaponType_HuntingRifle, L4D2WeaponType_Magnum, L4D2WeaponType_Rifle, 
-            L4D2WeaponType_SMG, L4D2WeaponType_RifleSg552,
-            L4D2WeaponType_Pistol, L4D2WeaponType_RifleAk47, L4D2WeaponType_SMGMp5, 
+            L4D2WeaponType_SMG, L4D2WeaponType_RifleSg552, L4D2WeaponType_Pistol, 
+            L4D2WeaponType_RifleAk47, L4D2WeaponType_SMGMp5, 
             L4D2WeaponType_SMGSilenced, L4D2WeaponType_SniperAwp, L4D2WeaponType_SniperMilitary, 
             L4D2WeaponType_SniperScout, L4D2WeaponType_RifleM60: {
             hReloadModifier.HookEntity(Hook_Post, entity, OnReloadModifier);
@@ -2882,13 +2881,18 @@ MRESReturn OnGetRateOfFire(int pThis, DHookReturn hReturn)
         
     fRateOfFireModifier = SpeedModifier(iClient, 1.0);
     fRateOfFire = hReturn.Value;
-    if (g_iWeaponType[pThis] == L4D2WeaponType_Pistol && GetEntProp(pThis, Prop_Send, "m_isDualWielding", 1)) {
-        fRateOfFire = 0.075000003;
-    }
 
-    if (GetEntProp(iClient, Prop_Send, "m_isIncapacitated", 1)) {
-		fRateOfFire = 0.3;
-	}
+    if (g_iWeaponType[pThis] == L4D2WeaponType_Pistol) {
+        if (GetEntProp(iClient, Prop_Send, "m_isIncapacitated", 1)) {
+            hReturn.Value = 0.3;
+        } else if (GetEntProp(pThis, Prop_Send, "m_isDualWielding", 1)) {
+            hReturn.Value = 0.075000003;
+        } else {
+            hReturn.Value = 0.175;
+        }
+
+        return MRES_Override;
+    }
 
     fRateOfFire = ClampFloatAboveZero(fRateOfFire / fRateOfFireModifier);
     if (g_iWeaponType[pThis] == L4D2WeaponType_RifleDesert) {
