@@ -119,6 +119,21 @@
 					}
 				}
 			}
+
+			"CTerrorMeleeWeapon::TestMeleeSwingCollision"
+			{
+				"signature"	"CTerrorMeleeWeapon::TestMeleeSwingCollision"
+				"callconv"	"thiscall"
+				"return"	"int"
+				"this"		"entity"
+				"arguments"
+				{
+					"a1"
+					{
+						"type"	"cbaseentity"
+					}
+				}
+			}
 		}
 
 		"Signatures"
@@ -199,6 +214,12 @@
 			{
 				"library"		"server"
 				"linux"			"@_ZN18CTerrorMeleeWeapon15StartMeleeSwingEP13CTerrorPlayerb"
+			}
+
+			"CTerrorMeleeWeapon::TestMeleeSwingCollision"
+			{
+				"library"	"server"
+				"linux"		"@_ZN18CTerrorMeleeWeapon23TestMeleeSwingCollisionERK6Vector"
 			}
 		}
 	}

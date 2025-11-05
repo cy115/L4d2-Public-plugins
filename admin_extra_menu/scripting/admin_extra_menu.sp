@@ -9,9 +9,10 @@
 #undef REQUIRE_PLUGIN
 #include <adminmenu>
 
-#define PLUGIN_TAG "{O}[{default}AEM{O}] "
+#define PLUGIN_TAG "{O}[{D}AEM{O}] "
 
 int
+    g_iMeleeRange[32],
     g_iFunction[33],
     g_iSelection[33],
     g_iOff_m_nFallenSurvivors,
@@ -118,9 +119,10 @@ ArrayList
 StringMap
     g_smMeleeTrans;
 
+TopMenu
+    admin_menu;
+
 Handle
-    top_menu,
-    admin_menu,
     g_hSDK_TerrorNavMesh_GetLastCheckpoint,
     g_hSDK_Checkpoint_GetLargestArea,
     g_hSDK_NextBotCreatePlayerBot_Smoker,
@@ -165,12 +167,15 @@ enum MeleeSwingInfo {
     MeleeSwingInfo_SwingType
 }
 
+ConVar
+    melee_range;
+
 public Plugin myinfo =
 {
     name = "L4D2 Admin Extra Menu",
     author = "Hitomi",
     description = "管理员菜单拓展",
-    version = "1.0",
+    version = "1.1",
     url = "https://github.com/cy115/"
 };
 
@@ -178,13 +183,18 @@ public void OnPluginStart()
 {
     LoadGameData();
 
+    melee_range = FindConVar("melee_range");
+
     g_aMeleeScripts = new ArrayList(ByteCountToCells(64));
     g_smMeleeTrans = new StringMap();
 
     InitMeleeStringMap();
 
-    if (LibraryExists("adminmenu") && ((top_menu = GetAdminTopMenu()) != INVALID_HANDLE)) {
-        OnAdminMenuReady(top_menu);
+    RegAdminCmd("sm_meleerange", Cmd_MeleeRange, ADMFLAG_SLAY, "sm_meleerange <#userid|name> [range]");
+
+    TopMenu hTopMenu;
+    if (LibraryExists("adminmenu") && ((hTopMenu = GetAdminTopMenu()) != null)) {
+        OnAdminMenuReady(hTopMenu);
     }
 }
 
@@ -318,9 +328,14 @@ void LoadHookAndPatches(GameData hGameData = null)
     iOffset = hGameData.GetOffset("CBaseCSGrenade::StartGrenadeThrow");
     hStartThrow = new DynamicHook(iOffset, HookType_Entity, ReturnType_Edict, ThisPointer_CBaseEntity);
 
-    DynamicDetour hDetour = DynamicDetour.FromConf(hGameData, "CTerrorMeleeWeapon::StartMeleeSwing");
+    DynamicDetour hDetour;
+    hDetour = DynamicDetour.FromConf(hGameData, "CTerrorMeleeWeapon::StartMeleeSwing");
     hDetour.Enable(Hook_Pre, OnMeleeSwingPre);
     hDetour.Enable(Hook_Post, OnMeleeSwingpPost);
+    hDetour = DynamicDetour.FromConf(hGameData, "CTerrorMeleeWeapon::TestMeleeSwingCollision");
+    hDetour.Enable(Hook_Pre, HookPre_TrySwing);
+    hDetour.Enable(Hook_Post, HookPost_TrySwing);
+    delete hDetour;
 
     Address patch = hGameData.GetAddress("CTerrorGun::GetRateOfFire");
     if (patch) {
@@ -425,11 +440,12 @@ void InitMeleeStringMap()
 
 public void OnAdminMenuReady(Handle menu)
 {
-    if (menu == admin_menu) {
+    TopMenu topmenu = TopMenu.FromHandle(menu);
+    if (topmenu == admin_menu) {
         return;
     }
 
-    admin_menu = menu;
+    admin_menu = topmenu;
     AddToTopMenu(admin_menu, "拓展功能", TopMenuObject_Category, Menu_CategoryHandler, INVALID_TOPMENUOBJECT);
     TopMenuObject AEM_Menu = FindTopMenuCategory(admin_menu, "拓展功能");
     if (AEM_Menu == INVALID_TOPMENUOBJECT) {
@@ -443,6 +459,11 @@ public void OnAdminMenuReady(Handle menu)
     TMO_InfectedMenu = AddToTopMenu(admin_menu, "TMO_InfectedMenu", TopMenuObject_Item, Menu_TopItemHandler, AEM_Menu, "TMO_InfectedMenu", ADMFLAG_CHEATS);
     TMO_OtherMenu = AddToTopMenu(admin_menu, "TMO_OtherMenu", TopMenuObject_Item, Menu_TopItemHandler, AEM_Menu, "TMO_OtherMenu", ADMFLAG_CHEATS);
     TMO_WeaponHandlingMenu = AddToTopMenu(admin_menu, "TMO_WeaponHandlingMenu", TopMenuObject_Item, Menu_TopItemHandler, AEM_Menu, "TMO_WeaponHandlingMenu", ADMFLAG_CHEATS);
+
+    TopMenuObject player_commands = admin_menu.FindCategory(ADMINMENU_PLAYERCOMMANDS);
+    if (player_commands != INVALID_TOPMENUOBJECT) {
+        admin_menu.AddItem("sm_meleerange", AdminMenu_MeleeRange, player_commands, "sm_meleerange", ADMFLAG_SLAY);
+    }
 }
 
 void Menu_TopItemHandler(TopMenu topmenu, TopMenuAction action, TopMenuObject topobj_id, int client, char[] buffer, int maxlength)
@@ -521,17 +542,17 @@ void Menu_CreateDirectorMenu(int client)
     SetMenuExitBackButton(menu, true);
     SetMenuExitButton(menu, true);
     menu.AddItem("fp", "强制生成一次恐慌事件"); // panic event
-    switch (GetConVarInt(FindConVar("director_panic_forever"))) {
+    switch (FindConVar("director_panic_forever").IntValue) {
         case 0: menu.AddItem("pf", "启动无限尸潮事件");
         case 1: menu.AddItem("pf", "结束无限尸潮事件");
     }
 
-    switch (GetConVarInt(FindConVar("director_force_tank"))) {
+    switch (FindConVar("director_force_tank").IntValue) {
         case 0: menu.AddItem("ft", "导演控制此轮不生成坦克");
         case 1: menu.AddItem("ft", "导演强制此轮生成坦克");
     }
 
-    switch (GetConVarInt(FindConVar("director_force_witch"))) {
+    switch (FindConVar("director_force_witch").IntValue) {
         case 0: menu.AddItem("fw", "导演控制此轮不生成女巫");
         case 1: menu.AddItem("fw", "导演控制此轮生成女巫");
     }
@@ -546,9 +567,9 @@ int Director_MenuHandler(Menu menu, MenuAction action, int client, int param2)
         case MenuAction_Select: {
             switch (param2) {
                 case 0: Do_ForcePanic(client);
-                case 1: GetConVarBool(FindConVar("director_panic_forever")) ? Do_PanicForever(false) : Do_PanicForever(true);
-                case 2: GetConVarBool(FindConVar("director_force_tank")) ? Do_ForceTank(false) : Do_ForceTank(true);
-                case 3: GetConVarBool(FindConVar("director_force_witch")) ? Do_ForceWitch(false) : Do_ForceWitch(true);
+                case 1: FindConVar("director_panic_forever").BoolValue ? Do_PanicForever(false) : Do_PanicForever(true);
+                case 2: FindConVar("director_force_tank").BoolValue ? Do_ForceTank(false) : Do_ForceTank(true);
+                case 3: FindConVar("director_force_witch").BoolValue ? Do_ForceWitch(false) : Do_ForceWitch(true);
                 case 4: Do_AddZombies(10); 
             }
 
@@ -567,37 +588,41 @@ int Director_MenuHandler(Menu menu, MenuAction action, int client, int param2)
 
 void Do_ForcePanic(int client)
 {
-    StripAndExecuteClientCommand(client, "director_force_panic_event", "");
-    CPrintToChatAll("%s{red}正在生成尸潮事件中... ...", PLUGIN_TAG);
+    L4D_ForcePanicEvent();
+    CPrintToChatAll("%s{O}%N {R}生成了一波尸潮事件", client, PLUGIN_TAG);
 }
 
 void Do_PanicForever(bool value)
 {
     StripAndChangeServerConVarBool("director_panic_forever", value);
-    CPrintToChatAll("%s%s", PLUGIN_TAG, value ? "{green}无限尸潮事件已启动" : "{red}无限尸潮事件已停止");
+    if (value) {
+        L4D_ForcePanicEvent();
+    }
+
+    CPrintToChatAll("%s%s", PLUGIN_TAG, value ? "{G}无限尸潮事件已启动" : "{R}无限尸潮事件已停止");
 }
 
 void Do_ForceTank(bool value)
 {
     StripAndChangeServerConVarBool("director_force_tank", value);
-    CPrintToChatAll("%s%s", PLUGIN_TAG, value ? "{green}已允许导演克会在此回合生成" : "{red}已禁止导演克会在此回合生成");
+    CPrintToChatAll("%s%s", PLUGIN_TAG, value ? "{G}已允许导演克会在此回合生成" : "{R}已禁止导演克会在此回合生成");
 }
 
 void Do_ForceWitch( bool value)
 {
     StripAndChangeServerConVarBool("director_force_witch", value);
-    CPrintToChatAll("%s%s", PLUGIN_TAG, value ? "{green}已允许导演女巫会在此回合生成" : "{red}已禁止导演女巫会在此回合生成");
+    CPrintToChatAll("%s%s", PLUGIN_TAG, value ? "{G}已允许导演女巫会在此回合生成" : "{R}已禁止导演女巫会在此回合生成");
 }
 
 void Do_AddZombies(int zombies_to_add)
 {
-    int new_zombie_total = zombies_to_add + GetConVarInt(FindConVar("z_mega_mob_size"));
+    int new_zombie_total = zombies_to_add + FindConVar("z_mega_mob_size").IntValue;
     StripAndChangeServerConVarInt("z_mega_mob_size", new_zombie_total);
-    new_zombie_total = zombies_to_add + GetConVarInt(FindConVar("z_mob_spawn_max_size"));
+    new_zombie_total = zombies_to_add + FindConVar("z_mob_spawn_max_size").IntValue;
     StripAndChangeServerConVarInt("z_mob_spawn_max_size", new_zombie_total);
-    new_zombie_total = zombies_to_add + GetConVarInt(FindConVar("z_mob_spawn_min_size"));
+    new_zombie_total = zombies_to_add + FindConVar("z_mob_spawn_min_size").IntValue;
     StripAndChangeServerConVarInt("z_mob_spawn_min_size", new_zombie_total);
-    PrintToChatAll("%s{default}尸潮规模已扩大 {red}10{default}!", PLUGIN_TAG);
+    PrintToChatAll("%s{D}尸潮规模已扩大 {R}10{D}!", PLUGIN_TAG);
 }
 // -------------------------------------------------------------------------------
 // --------------------------------------- WeaponMenu ----------------------------
@@ -855,7 +880,7 @@ int Life_MenuHandler(Menu menu, MenuAction action, int client, int param2)
                         CheatCommand(i, "give health");
                     }
 
-                    CPrintToChatAll("%s{green}%N {default}给 {green}所有生还/特感 {default}刷了一份 {O}生命值{default}.", PLUGIN_TAG, client);
+                    CPrintToChatAll("%s{G}%N {D}给 {G}所有生还/特感 {D}刷了一份 {O}生命值{D}.", PLUGIN_TAG, client);
                     Menu_CreateItemMenu(client, 0);
                 }
                 case 'i': {
@@ -866,7 +891,7 @@ int Life_MenuHandler(Menu menu, MenuAction action, int client, int param2)
                         CheatCommand(i, "give health");
                     }
 
-                    CPrintToChatAll("%s{green}%N {default}给 {red}所有特感 {default}刷了一份 {O}生命值{default}.", PLUGIN_TAG, client);
+                    CPrintToChatAll("%s{G}%N {D}给 {R}所有特感 {D}刷了一份 {O}生命值{D}.", PLUGIN_TAG, client);
                     Menu_CreateItemMenu(client, 0);
                 }
                 case 's': {
@@ -878,14 +903,14 @@ int Life_MenuHandler(Menu menu, MenuAction action, int client, int param2)
                         CheatCommand(i, "give health");
                     }
 
-                    CPrintToChatAll("%s{green}%N {default}给 {blue}所有生还 {default}刷了一份 {O}生命值{default}.", PLUGIN_TAG, client);
+                    CPrintToChatAll("%s{G}%N {D}给 {B}所有生还 {D}刷了一份 {O}生命值{D}.", PLUGIN_TAG, client);
                     Menu_CreateItemMenu(client, 0);
                 }
                 default: {
                     int target = GetClientOfUserId(StringToInt(item));
                     if (IsValidClient(target) && IsPlayerAlive(target)) {
                         CheatCommand(target, "give health");
-                        CPrintToChatAll("%s{green}%N {default}给 {green}%N {default}刷了一份 {O}生命值{default}.", PLUGIN_TAG, client, target);
+                        CPrintToChatAll("%s{G}%N {D}给 {G}%N {D}刷了一份 {O}生命值{D}.", PLUGIN_TAG, client, target);
                     }
                 }
             }
@@ -999,9 +1024,9 @@ int TeleprotDestination_MenuHandler(Menu menu, MenuAction action, int client, in
                     GetClientAbsOrigin(target, vOrigin);
                     allow = true;
                     if(IsValidClient(victim))
-                        CPrintToChatAll("%s{green}%N {default}将 %s%N {default}传送到 {green}%N{default}处.", PLUGIN_TAG, client, GetClientTeam(victim) == 2 ? "{blue}" : "{red}", victim, target);
+                        CPrintToChatAll("%s{G}%N {D}将 %s%N {D}传送到 {G}%N{D}处.", PLUGIN_TAG, client, GetClientTeam(victim) == 2 ? "{B}" : "{R}", victim, target);
                     else
-                        CPrintToChatAll("%s{green}%N {default}将 %s {default}传送到 {green}%N{default}处.", PLUGIN_TAG, client, targetTeam == 2 ? "{blue}所有生还" : "{red}所有特感", target);
+                        CPrintToChatAll("%s{G}%N {D}将 %s {D}传送到 {G}%N{D}处.", PLUGIN_TAG, client, targetTeam == 2 ? "{B}所有生还" : "{R}所有特感", target);
                 }
             }
 
@@ -1011,7 +1036,7 @@ int TeleprotDestination_MenuHandler(Menu menu, MenuAction action, int client, in
                     TeleportFix(victim);
                     TeleportEntity(victim, vOrigin, NULL_VECTOR, NULL_VECTOR);
                     if (info[1][0] == 'c') {
-                        CPrintToChatAll("%s{green}%N {default}将 %s%N {default}传送到 {green}操作者的准心处{default}.", PLUGIN_TAG, client, GetClientTeam(victim) == 2 ? "{blue}" : "{red}", victim);
+                        CPrintToChatAll("%s{G}%N {D}将 %s%N {D}传送到 {G}操作者的准心处{D}.", PLUGIN_TAG, client, GetClientTeam(victim) == 2 ? "{B}" : "{R}", victim);
                     }
                 }
                 else {
@@ -1025,7 +1050,7 @@ int TeleprotDestination_MenuHandler(Menu menu, MenuAction action, int client, in
                                 }
                             }
                             if (info[1][0] == 'c')
-                                CPrintToChatAll("%s{green}%N {default}将 {blue}所有生还 {default}传送到操作者的准心处.", PLUGIN_TAG, client);
+                                CPrintToChatAll("%s{G}%N {D}将 {B}所有生还 {D}传送到操作者的准心处.", PLUGIN_TAG, client);
                         }   
                         case 3: {
                             for (int i = 1; i <= MaxClients; i++) {
@@ -1035,13 +1060,13 @@ int TeleprotDestination_MenuHandler(Menu menu, MenuAction action, int client, in
                                 }
                             }
                             if (info[1][0] == 'c')
-                                CPrintToChatAll("%s{green}%N {default}将 {red}所有特感 {default}传送到操作者的准心处.", PLUGIN_TAG, client);
+                                CPrintToChatAll("%s{G}%N {D}将 {R}所有特感 {D}传送到操作者的准心处.", PLUGIN_TAG, client);
                         }
                     }
                 }
             }
             else if (info[1][0] == 'c') {
-                CPrintToChat(client, "%s{default}获取准心处位置{red}失败{default}! 请重新尝试.");
+                CPrintToChat(client, "%s{D}获取准心处位置{R}失败{D}! 请重新尝试.");
             }
             // 安全区传送
             if (info[1][0] == 's') {
@@ -1099,7 +1124,7 @@ void WarpToStartArea(int client, int target = 0, int team = 0)
 {
     if (IsValidClient(target)) {
         CheatCommand(target, "warp_to_start_area");
-        CPrintToChatAll("%s{green}%N {default}将 %s%N {default}传送到起点安全区/屋.", PLUGIN_TAG, client, GetClientTeam(target) == 2 ? "{blue}" : "{red}", target);
+        CPrintToChatAll("%s{G}%N {D}将 %s%N {D}传送到起点安全区/屋.", PLUGIN_TAG, client, GetClientTeam(target) == 2 ? "{B}" : "{R}", target);
     }
     else {
         for (int i = 1; i <= MaxClients; i++) {
@@ -1108,7 +1133,7 @@ void WarpToStartArea(int client, int target = 0, int team = 0)
             }
         }
 
-        CPrintToChatAll("%s{green}%N {default}将 %s {default}传送到起点安全区/屋.", PLUGIN_TAG, client, team == 2 ? "{blue}所有生还" : "{red}所有特感");
+        CPrintToChatAll("%s{G}%N {D}将 %s {D}传送到起点安全区/屋.", PLUGIN_TAG, client, team == 2 ? "{B}所有生还" : "{R}所有特感");
     }
 
     Menu_CreateTeleportMenu(client, 0);
@@ -1125,7 +1150,7 @@ void WarpToCheckpoint(int client, int target = 0, int team = 0)
                 if (IsValidClient(target)) {
                     L4D_FindRandomSpot(navArea, vPos);
                     TeleportEntity(target, vPos, NULL_VECTOR, NULL_VECTOR);
-                    CPrintToChatAll("%s{green}%N {default}将 %s%N {default}传送到终点安全区/屋.", PLUGIN_TAG, client, GetClientTeam(target) == 2 ? "{blue}" : "{red}", target);
+                    CPrintToChatAll("%s{G}%N {D}将 %s%N {D}传送到终点安全区/屋.", PLUGIN_TAG, client, GetClientTeam(target) == 2 ? "{B}" : "{R}", target);
                 }
                 else {
                     for (int i = 1; i <= MaxClients; i++) {
@@ -1135,7 +1160,7 @@ void WarpToCheckpoint(int client, int target = 0, int team = 0)
                         }
                     }
 
-                    CPrintToChatAll("%s{green}%N {default}将 %s {default}传送到终点安全区/屋.", PLUGIN_TAG, client, team == 2 ? "{blue}所有生还" : "{red}所有特感");
+                    CPrintToChatAll("%s{G}%N {D}将 %s {D}传送到终点安全区/屋.", PLUGIN_TAG, client, team == 2 ? "{B}所有生还" : "{R}所有特感");
                 }
 
                 Menu_CreateTeleportMenu(client, 0);
@@ -1253,7 +1278,7 @@ int AISI_MenuHandler(Menu menu, MenuAction action, int client, int param2)
         case MenuAction_Select: {
             int iKickTarget;
             if (GetClientCount(false) >= MaxClients - 1) {
-                CPrintToChat(client, "%s{default}槽位已满, 正在尝试{green}踢出死亡的特感AI... ...", PLUGIN_TAG);
+                CPrintToChat(client, "%s{D}槽位已满, 正在尝试{G}踢出死亡的特感AI... ...", PLUGIN_TAG);
                 iKickTarget = KickDeadInfectedBots(client);
             }
 
@@ -1331,7 +1356,7 @@ void SpawnPlayerSI(int client, const char[] type, bool auto = false)
     char sSpawnArg[16];
     FormatEx(sSpawnArg, sizeof(sSpawnArg), "%s%s", type, auto ? " auto" : "");
     StripAndExecuteClientCommand(client, "z_spawn", sSpawnArg);
-    CPrintToChatAll("%s{green}%N {default}生成一个可供接管的[{red}%s{default}]", PLUGIN_TAG, client, type);
+    CPrintToChatAll("%s{G}%N {D}生成一个可供接管的[{R}%s{D}]", PLUGIN_TAG, client, type);
 }
 
 int KickDeadInfectedBots(int client)
@@ -1374,7 +1399,7 @@ int CreateInfectedBot(int client, int type)
             }
             
             InitializeSpecial(ent, vPos, NULL_VECTOR);
-            CPrintToChatAll("%s{green}%N {default}生成了一个AI的[{red}Smoker{default}]", PLUGIN_TAG, client);
+            CPrintToChatAll("%s{G}%N {D}生成了一个AI的[{R}Smoker{D}]", PLUGIN_TAG, client);
         }
         case 2: {
             ent = SDKCall(g_hSDK_NextBotCreatePlayerBot_Boomer, "Boomer");
@@ -1383,7 +1408,7 @@ int CreateInfectedBot(int client, int type)
             }
             
             InitializeSpecial(ent, vPos, NULL_VECTOR);
-            CPrintToChatAll("%s{green}%N {default}生成了一个AI的[{red}Boomer{default}]", PLUGIN_TAG, client);
+            CPrintToChatAll("%s{G}%N {D}生成了一个AI的[{R}Boomer{D}]", PLUGIN_TAG, client);
         }
         case 3: {
             ent = SDKCall(g_hSDK_NextBotCreatePlayerBot_Hunter, "Hunter");
@@ -1392,7 +1417,7 @@ int CreateInfectedBot(int client, int type)
             }
             
             InitializeSpecial(ent, vPos, NULL_VECTOR);
-            CPrintToChatAll("%s{green}%N {default}生成了一个AI的[{red}Hunter{default}]", PLUGIN_TAG, client);
+            CPrintToChatAll("%s{G}%N {D}生成了一个AI的[{R}Hunter{D}]", PLUGIN_TAG, client);
         }
         case 4: {
             ent = SDKCall(g_hSDK_NextBotCreatePlayerBot_Spitter, "Spitter");
@@ -1401,7 +1426,7 @@ int CreateInfectedBot(int client, int type)
             }
             
             InitializeSpecial(ent, vPos, NULL_VECTOR);
-            CPrintToChatAll("%s{green}%N {default}生成了一个AI的[{red}Spitter{default}]", PLUGIN_TAG, client);
+            CPrintToChatAll("%s{G}%N {D}生成了一个AI的[{R}Spitter{D}]", PLUGIN_TAG, client);
         }
         case 5: {
             ent = SDKCall(g_hSDK_NextBotCreatePlayerBot_Jockey, "Jockey");
@@ -1410,7 +1435,7 @@ int CreateInfectedBot(int client, int type)
             }
             
             InitializeSpecial(ent, vPos, NULL_VECTOR);
-            CPrintToChatAll("%s{green}%N {default}生成了一个AI的[{red}Jockey{default}]", PLUGIN_TAG, client);
+            CPrintToChatAll("%s{G}%N {D}生成了一个AI的[{R}Jockey{D}]", PLUGIN_TAG, client);
         }
         case 6: {
             ent = SDKCall(g_hSDK_NextBotCreatePlayerBot_Charger, "Charger");
@@ -1419,7 +1444,7 @@ int CreateInfectedBot(int client, int type)
             }
             
             InitializeSpecial(ent, vPos, NULL_VECTOR);
-            CPrintToChatAll("%s{green}%N {default}生成了一个AI的[{red}Charger{default}]", PLUGIN_TAG, client);
+            CPrintToChatAll("%s{G}%N {D}生成了一个AI的[{R}Charger{D}]", PLUGIN_TAG, client);
         }
         case 8: {
             ent = SDKCall(g_hSDK_NextBotCreatePlayerBot_Tank, "Tank");
@@ -1428,7 +1453,7 @@ int CreateInfectedBot(int client, int type)
             }
             
             InitializeSpecial(ent, vPos, NULL_VECTOR);
-            CPrintToChatAll("%s{green}%N {default}生成了一个AI的[{red}Tank{default}]", PLUGIN_TAG, client);
+            CPrintToChatAll("%s{G}%N {D}生成了一个AI的[{R}Tank{D}]", PLUGIN_TAG, client);
         }
     }
 
@@ -1453,10 +1478,10 @@ int SpawnCommonInfected(int client, const char[] zombie)
         DispatchSpawn(ent);
         if (strlen(zombie) > 5) {
             SetEntityModel(ent, "models/infected/witch_bride.mdl");
-            CPrintToChatAll("%s{green}%N {default}生成了一个[{red}Bride Witch{default}]", PLUGIN_TAG, client);
+            CPrintToChatAll("%s{G}%N {D}生成了一个[{R}Bride Witch{D}]", PLUGIN_TAG, client);
         }
         else {
-            CPrintToChatAll("%s{green}%N {default}生成了一个[{red}Witch{default}]", PLUGIN_TAG, client);
+            CPrintToChatAll("%s{G}%N {D}生成了一个[{R}Witch{D}]", PLUGIN_TAG, client);
         }
     } else {
         ent = CreateEntityByName("infected");
@@ -1484,7 +1509,7 @@ int SpawnCommonInfected(int client, const char[] zombie)
         if (pos != 6) {
             DispatchSpawn(ent);
             ActivateEntity(ent);
-            CPrintToChatAll("%s{green}%N {default}生成了一个[{red}%s{default}]", PLUGIN_TAG, client, Inf);
+            CPrintToChatAll("%s{G}%N {D}生成了一个[{R}%s{D}]", PLUGIN_TAG, client, Inf);
         } else {
             int m_nFallenSurvivor = LoadFromAddress(g_pZombieManager + view_as<Address>(g_iOff_m_nFallenSurvivors), NumberType_Int32);
             float m_timestamp = view_as<float>(LoadFromAddress(g_pZombieManager + view_as<Address>(g_iOff_m_FallenSurvivorTimer) + view_as<Address>(8), NumberType_Int32));
@@ -1494,7 +1519,7 @@ int SpawnCommonInfected(int client, const char[] zombie)
             ActivateEntity(ent);
             StoreToAddress(g_pZombieManager + view_as<Address>(g_iOff_m_nFallenSurvivors), m_nFallenSurvivor + LoadFromAddress(g_pZombieManager + view_as<Address>(g_iOff_m_nFallenSurvivors), NumberType_Int32), NumberType_Int32);
             StoreToAddress(g_pZombieManager + view_as<Address>(g_iOff_m_FallenSurvivorTimer) + view_as<Address>(8), view_as<int>(m_timestamp), NumberType_Int32);
-            CPrintToChatAll("%s{green}%N {default}生成了一个[{red}堕落生还者{default}]", PLUGIN_TAG, client);
+            CPrintToChatAll("%s{G}%N {D}生成了一个[{R}堕落生还者{D}]", PLUGIN_TAG, client);
         }
     }
 
@@ -1597,7 +1622,7 @@ int StripSlot_MenuHandler(Menu menu, MenuAction action, int client, int param2)
                     }
                 }
                 
-                CPrintToChatAll("%s{green}%N {default}已经剥夺所有生还的装备.", PLUGIN_TAG, client);
+                CPrintToChatAll("%s{G}%N {D}已经剥夺所有生还的装备.", PLUGIN_TAG, client);
                 Menu_CreateOtherMenu(client, 0);
             }
             else {
@@ -1668,12 +1693,12 @@ int SlotSelect_MenuHandler(Menu menu, MenuAction action, int client, int param2)
             if (IsValidClient(target)) {
                 if (info[1][0] == 'a') {
                     L4D_RemoveAllWeapons(target);
-                    CPrintToChatAll("%s{green}%N {default}已经剥夺 {green}%N {default}的所有的装备.", PLUGIN_TAG, client, target);
+                    CPrintToChatAll("%s{G}%N {D}已经剥夺 {G}%N {D}的所有的装备.", PLUGIN_TAG, client, target);
                     StripSlot(client, g_iSelection[client]);
                 }
                 else {
                     L4D_RemoveWeaponSlot(target, view_as<L4DWeaponSlot>(StringToInt(info[1])));
-                    CPrintToChatAll("%s{green}%N {default}已经剥夺 {green}%N {default}的第 {blue}%i {default}槽位的装备.", PLUGIN_TAG, client, target, StringToInt(info[1]));
+                    CPrintToChatAll("%s{G}%N {D}已经剥夺 {G}%N {D}的第 {B}%i {D}槽位的装备.", PLUGIN_TAG, client, target, StringToInt(info[1]));
                     SlotSelect(client, target);
                 }
             }
@@ -1720,13 +1745,13 @@ int IncapSur_MenuHandler(Menu menu, MenuAction action, int client, int param2)
                     Incap(i);
                 }
                         
-                CPrintToChatAll("%s{green}%N {default}强制 {green}所有生还 {default}倒地.", PLUGIN_TAG, client);
+                CPrintToChatAll("%s{G}%N {D}强制 {G}所有生还 {D}倒地.", PLUGIN_TAG, client);
                 Menu_CreateOtherMenu(client, 0);
             }
             else {
                 int target = GetClientOfUserId(StringToInt(item));
                 if (IsValidClient(target)) {
-                    CPrintToChatAll("%s{green}%N {default}强制 {green}%N {default}倒地.", PLUGIN_TAG, client, target);
+                    CPrintToChatAll("%s{G}%N {D}强制 {G}%N {D}倒地.", PLUGIN_TAG, client, target);
                     Incap(target);
                 }
 
@@ -1770,10 +1795,10 @@ int GodMode_MenuHandler(Menu menu, MenuAction action, int client, int param2)
             int target = GetClientOfUserId(StringToInt(item));
             if (IsValidClient(target)) {
                 g_bGodMode[target] = !g_bGodMode[target];
-                CPrintToChat(client, "%s{green}%N %s {default}了 {green}%N {default}的伤害免疫", PLUGIN_TAG, client, g_bGodMode[target] ? "{blue}启用" : "{red}禁用", target);
+                CPrintToChat(client, "%s{G}%N %s {D}了 {G}%N {D}的伤害免疫", PLUGIN_TAG, client, g_bGodMode[target] ? "{B}启用" : "{R}禁用", target);
             }
             else {
-                CPrintToChat(client, "%s{default}目标玩家已{red}失效{default}!", PLUGIN_TAG);
+                CPrintToChat(client, "%s{D}目标玩家已{R}失效{D}!", PLUGIN_TAG);
             }
 
             GodMode(client, menu.Selection);
@@ -1858,7 +1883,7 @@ int SwitchTeam_MenuHandler(Menu menu, MenuAction action, int client, int param2)
                 SwitchPlayerTeam(client, target);
             }
             else {
-                CPrintToChat(client, "%s{default}目标玩家已{red}失效{default}!", PLUGIN_TAG);
+                CPrintToChat(client, "%s{D}目标玩家已{R}失效{D}!", PLUGIN_TAG);
             }
         }
         case MenuAction_End: delete menu;
@@ -1919,7 +1944,7 @@ int SwitchPlayerTeam_MenuHandler(Menu menu, MenuAction action, int client, int p
                                 GoAFKTimer(target, 0.0);
                             }
                             else {
-                                CPrintToChat(client, "%s{default}仅生还支持闲置!", PLUGIN_TAG);
+                                CPrintToChat(client, "%s{D}仅生还支持闲置!", PLUGIN_TAG);
                             }
                         }
                         case 1: {
@@ -1934,13 +1959,13 @@ int SwitchPlayerTeam_MenuHandler(Menu menu, MenuAction action, int client, int p
                     }
                 }
                 else {
-                    CPrintToChat(client, "%s{default}目标玩家已在目标队伍中!", PLUGIN_TAG);
+                    CPrintToChat(client, "%s{D}目标玩家已在目标队伍中!", PLUGIN_TAG);
                 }
                         
                 SwitchTeam(client, g_iSelection[client]);
             }
             else {
-                CPrintToChat(client, "%s{default}目标玩家已失效!", PLUGIN_TAG);
+                CPrintToChat(client, "%s{D}目标玩家已失效!", PLUGIN_TAG);
             }
         }
         case MenuAction_End: delete menu;
@@ -2027,7 +2052,7 @@ int RespawnPlayer_MenuHandler(Menu menu, MenuAction action, int client, int para
                         TeleportToSurvivor(i);
                     }
 
-                    CPrintToChatAll("%s{green}%N {O}复活所有了生还 {default}.", PLUGIN_TAG, client);
+                    CPrintToChatAll("%s{G}%N {O}复活所有了生还 {D}.", PLUGIN_TAG, client);
                     Menu_CreateOtherMenu(client, 0);
             }
             else {
@@ -2038,7 +2063,7 @@ int RespawnPlayer_MenuHandler(Menu menu, MenuAction action, int client, int para
                     StatsConditionPatch(false);
                     TeleportToSurvivor(target);
                     RespawnPlayer(client, menu.Selection);
-                    CPrintToChatAll("%s{green}%N {O}复活了 {blue}%N {default}.", PLUGIN_TAG, client, target);
+                    CPrintToChatAll("%s{G}%N {O}复活了 {B}%N {D}.", PLUGIN_TAG, client, target);
                 }
             }
         }
@@ -2130,7 +2155,7 @@ int SetFriendlyFire_MenuHandler(Menu menu, MenuAction action, int client, int pa
                     FindConVar("survivor_friendly_fire_factor_normal").RestoreDefault();
                     FindConVar("survivor_friendly_fire_factor_hard").RestoreDefault();
                     FindConVar("survivor_friendly_fire_factor_expert").RestoreDefault();
-                    CPrintToChatAll("%s{default}友伤系数已被 {green}%N {default}重置为{red}默认值{default}!", PLUGIN_TAG, client);
+                    CPrintToChatAll("%s{D}友伤系数已被 {G}%N {D}重置为{R}默认值{D}!", PLUGIN_TAG, client);
                 }
                 default: {
                     float fPercent = StringToFloat(item);
@@ -2138,7 +2163,7 @@ int SetFriendlyFire_MenuHandler(Menu menu, MenuAction action, int client, int pa
                     FindConVar("survivor_friendly_fire_factor_normal").SetFloat(fPercent);
                     FindConVar("survivor_friendly_fire_factor_hard").SetFloat(fPercent);
                     FindConVar("survivor_friendly_fire_factor_expert").SetFloat(fPercent);
-                    CPrintToChatAll("%s{default}友伤系数已被 {green}%N {default}设置为 {red}%.1f{default}.", PLUGIN_TAG, client, fPercent);
+                    CPrintToChatAll("%s{D}友伤系数已被 {G}%N {D}设置为 {R}%.1f{D}.", PLUGIN_TAG, client, fPercent);
                 }
             }
 
@@ -2163,7 +2188,7 @@ void SlayAllSI(int client)
         }
     }
 
-    CPrintToChatAll("%s{green}%N {O}处死所有特感 {default}.", PLUGIN_TAG, client);
+    CPrintToChatAll("%s{G}%N {O}处死所有特感 {D}.", PLUGIN_TAG, client);
     Menu_CreateOtherMenu(client, 0);
 }
 
@@ -2175,7 +2200,7 @@ void SlayAllSur(int client)
         }
     }
 
-    CPrintToChatAll("%s{green}%N {O}处死所有生还 {default}.", PLUGIN_TAG, client);
+    CPrintToChatAll("%s{G}%N {O}处死所有生还 {D}.", PLUGIN_TAG, client);
     Menu_CreateOtherMenu(client, 7);
 }
 
@@ -2205,10 +2230,10 @@ int IgnoreAbility_MenuHandler(Menu menu, MenuAction action, int client, int para
             int target = GetClientOfUserId(StringToInt(item));
             if (target > 0 && target <= MaxClients && IsClientInGame(target)) {
                 g_bIgnoreAbility[target] = !g_bIgnoreAbility[target];
-                CPrintToChatAll("%s{green}%N {default}已 {green}%s {green}%N {default}的特感控制免疫.", PLUGIN_TAG, client, g_bIgnoreAbility[target] ? "{blue}启用" : "{red}禁用", target);
+                CPrintToChatAll("%s{G}%N {D}已 {G}%s {G}%N {D}的特感控制免疫.", PLUGIN_TAG, client, g_bIgnoreAbility[target] ? "{B}启用" : "{R}禁用", target);
             }
             else {
-                CPrintToChatAll("%s{default}目标玩家已失效!", PLUGIN_TAG);
+                CPrintToChatAll("%s{D}目标玩家已失效!", PLUGIN_TAG);
             }
 
             IgnoreAbility(client, menu.Selection);
@@ -2414,12 +2439,12 @@ int ShowAliveSur_MenuHandler(Menu menu, MenuAction action, int client, int param
                 if (StrContains(g_sNamedItem[client], "give ")) {
                     char sItem[2][32];
                     ExplodeString(g_sNamedItem[client], " ", sItem, sizeof(sItem), sizeof(sItem[]));
-                    CPrintToChatAll("%s{green}%N {default}给 {green}所有人 {default}刷了一份 {blue}%s", PLUGIN_TAG, client, sItem[1]);
+                    CPrintToChatAll("%s{G}%N {D}给 {G}所有人 {D}刷了一份 {B}%s", PLUGIN_TAG, client, sItem[1]);
                 }
                 else if (StrContains(g_sNamedItem[client], "upgrade_add ")) {
                     char sItem[2][32];
                     ExplodeString(g_sNamedItem[client], " ", sItem, sizeof(sItem), sizeof(sItem[]));
-                    CPrintToChatAll("%s{green}%N {default}给 {green}所有人 {default}刷了一份 {blue}%s", PLUGIN_TAG, client, sItem[1]);
+                    CPrintToChatAll("%s{G}%N {D}给 {G}所有人 {D}刷了一份 {B}%s", PLUGIN_TAG, client, sItem[1]);
                 }
             }
             else {
@@ -2427,12 +2452,12 @@ int ShowAliveSur_MenuHandler(Menu menu, MenuAction action, int client, int param
                 if (StrContains(g_sNamedItem[client], "give ")) {
                     char sItem[2][32];
                     ExplodeString(g_sNamedItem[client], " ", sItem, sizeof(sItem), sizeof(sItem[]));
-                    CPrintToChatAll("%s{green}%N {default}给 {green}%N {default}刷了一份 {blue}%s", PLUGIN_TAG, client, GetClientOfUserId(StringToInt(item)), sItem[1]);
+                    CPrintToChatAll("%s{G}%N {D}给 {G}%N {D}刷了一份 {B}%s", PLUGIN_TAG, client, GetClientOfUserId(StringToInt(item)), sItem[1]);
                 }
                 else if (StrContains(g_sNamedItem[client], "upgrade_add ")) {
                     char sItem[2][32];
                     ExplodeString(g_sNamedItem[client], " ", sItem, sizeof(sItem), sizeof(sItem[]));
-                    CPrintToChatAll("%s{green}%N {default}给 {green}%N {default}刷了一份 {blue}%s", PLUGIN_TAG, client, GetClientOfUserId(StringToInt(item)), sItem[1]);
+                    CPrintToChatAll("%s{G}%N {D}给 {G}%N {D}刷了一份 {B}%s", PLUGIN_TAG, client, GetClientOfUserId(StringToInt(item)), sItem[1]);
                 }
             }
 
@@ -2802,6 +2827,27 @@ MRESReturn OnMeleeSwingpPost()
     return MRES_Ignored;
 }
 
+MRESReturn HookPre_TrySwing(int pThis, Handle hReturn)
+{
+    if (IsValidEntity(pThis)) {
+        int client = GetEntPropEnt(pThis, Prop_Send, "m_hOwnerEntity");
+        if (client && g_iMeleeRange[client]) {
+            melee_range.SetInt(g_iMeleeRange[client]);
+
+            return MRES_Ignored;
+        }
+    }
+
+    return MRES_Ignored;
+}
+
+MRESReturn HookPost_TrySwing(int pThis, Handle hReturn)
+{
+    melee_range.SetInt(70);
+
+    return MRES_Ignored;
+}
+
 void PostThinkOnce(int iClient)
 {
 	SDKUnhook(iClient, SDKHook_PostThink, PostThinkOnce);
@@ -3059,14 +3105,14 @@ int WeaponEnhanced_MenuHandler(Menu menu, MenuAction action, int client, int par
                     }
                 }
 
-                CPrintToChatAll("%s{green}%N {default}将 {green}所有玩家 {default}的武器操纵性设置为 {blue}%.1f {default}x", PLUGIN_TAG, client, fSpeedUp);
+                CPrintToChatAll("%s{G}%N {D}将 {G}所有玩家 {D}的武器操纵性设置为 {B}%.1f {D}x", PLUGIN_TAG, client, fSpeedUp);
             } else {
                 int target = GetClientOfUserId(StringToInt(info[1]));
                 if (target && IsClientInGame(target)) {
                     g_fSpeedUp[target] = fSpeedUp;
-                    CPrintToChatAll("%s{green}%N {default}将 {green}%N {default}的武器操纵性设置为 {blue}%.1f {default}x", PLUGIN_TAG, client, target, fSpeedUp);
+                    CPrintToChatAll("%s{G}%N {D}将 {G}%N {D}的武器操纵性设置为 {B}%.1f {D}x", PLUGIN_TAG, client, target, fSpeedUp);
                 } else {
-                    CPrintToChatAll("%s{default}目标玩家已失效!", PLUGIN_TAG);
+                    CPrintToChatAll("%s{D}目标玩家已失效!", PLUGIN_TAG);
                 }
             }
 
@@ -3078,6 +3124,123 @@ int WeaponEnhanced_MenuHandler(Menu menu, MenuAction action, int client, int par
             }
         }
         case MenuAction_End: delete menu;
+    }
+
+    return 0;
+}
+
+Action Cmd_MeleeRange(int client, int args)
+{
+    if (args < 2) {
+        CReplyToCommand(client, "%s{R}Usage{D}: {O}sm_meleerange {D}<{O}#userid{D}|{O}name{D}> [{O}range{D}]", PLUGIN_TAG);
+        
+        return Plugin_Handled;
+    }
+
+    char arg[65];
+    GetCmdArg(1, arg, sizeof(arg));
+
+    char target_name[MAX_TARGET_LENGTH];
+    int target_list[MAXPLAYERS], target_count;
+    bool tn_is_ml;
+
+    if ((target_count = ProcessTargetString(
+            arg,
+            client,
+            target_list,
+            MAXPLAYERS,
+            COMMAND_FILTER_ALIVE,
+            target_name,
+            sizeof(target_name),
+            tn_is_ml)) <= 0) {
+        ReplyToTargetError(client, target_count);
+        return Plugin_Handled;
+    }
+
+    for (int i = 0; i < target_count; i++) {
+        g_iMeleeRange[target_list[i]] = GetCmdArgInt(2);
+    }
+
+    return Plugin_Handled;
+}
+
+void AdminMenu_MeleeRange(TopMenu topmenu, TopMenuAction action, TopMenuObject object_id, int param, char[] buffer, int maxlength) {
+    if (action == TopMenuAction_DisplayOption) {
+        Format(buffer, maxlength, "更改玩家近战距离");
+    } else if (action == TopMenuAction_SelectOption) {
+        DisplayMeleeRangeMenu(param);
+    }
+}
+
+void DisplayMeleeRangeMenu(int client)
+{
+    Menu menu = new Menu(MenuHandler_MeleeRange);
+    menu.SetTitle("更改玩家近战距离:");
+    menu.ExitBackButton = true;
+    AddTargetsToMenu(menu, client, true, true);
+
+    menu.Display(client, MENU_TIME_FOREVER);
+}
+
+int MenuHandler_MeleeRange(Menu menu, MenuAction action, int param1, int param2)
+{
+    switch (action) {
+        case MenuAction_End: delete menu;
+        case MenuAction_Cancel: {
+            if (param2 == MenuCancel_ExitBack && admin_menu) {
+                admin_menu.Display(param1, TopMenuPosition_LastCategory);
+            }
+        }
+        case MenuAction_Select: {
+            char info[32];
+            int userid, target;
+            menu.GetItem(param2, info, sizeof(info));
+            userid = StringToInt(info);
+            if (!(target = GetClientOfUserId(userid))) {
+                PrintToChat(param1, "[SM] %t", "Player no longer available");
+            } else if (!CanUserTarget(param1, target)) {
+                PrintToChat(param1, "[SM] %t", "Unable to target");
+            } else {
+                Menu new_menu = new Menu(MeleeRange_MenuHandler);
+                new_menu.SetTitle("设置近战距离:");
+                FormatEx(info, sizeof(info), "%i|70", userid);
+                new_menu.AddItem(info, "默认(70)");
+                FormatEx(info, sizeof(info), "%i|140", userid);
+                new_menu.AddItem(info, "140");
+                FormatEx(info, sizeof(info), "%i|210", userid);
+                new_menu.AddItem(info, "210");
+                new_menu.ExitBackButton = true;
+                new_menu.Display(param1, MENU_TIME_FOREVER);
+            }
+        }
+    }
+
+    return 0;
+}
+
+int MeleeRange_MenuHandler(Menu menu, MenuAction action, int param1, int param2)
+{
+    switch (action) {
+        case MenuAction_End: delete menu;
+        case MenuAction_Cancel: {
+            if (param2 == MenuCancel_ExitBack && admin_menu) {
+                admin_menu.Display(param1, TopMenuPosition_LastCategory);
+            }
+        }
+        case MenuAction_Select: {
+            char info[32], info2[2][16];
+            int userid, target;
+            menu.GetItem(param2, info, sizeof(info));
+            ExplodeString(info, "|", info2, 2, sizeof(info2[]));
+            userid = StringToInt(info2[0]);
+            if (!(target = GetClientOfUserId(userid))) {
+                PrintToChat(param1, "[SM] %t", "Player no longer available");
+            } else if (!CanUserTarget(param1, target)) {
+                PrintToChat(param1, "[SM] %t", "Unable to target");
+            } else {
+                g_iMeleeRange[target] = StringToInt(info2[1]);
+            }
+        }
     }
 
     return 0;

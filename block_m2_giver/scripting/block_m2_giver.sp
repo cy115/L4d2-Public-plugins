@@ -57,6 +57,7 @@ MRESReturn OnCTerrorPlayerThrowWeaponPre(int pThis, DHookReturn hReturn, DHookPa
         GetEntityClassname(entity, weapon, sizeof(weapon));
         if ((StrEqual(weapon, "weapon_pain_pills") && (g_iBlockType & BLOCKTYPE_PILLS)) || 
             StrEqual(weapon, "weapon_adrenaline") && (g_iBlockType & BLOCKTYPE_ADRENALINE)) {
+            hReturn.Value = 0;
             return MRES_Supercede;
         }
 
