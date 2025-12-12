@@ -6,7 +6,7 @@ public Plugin myinfo =
     name = "Error Files Deleter",
     author = "夜羽真白, Hitomi",
     description = "自动删除 error_logs 和 confoglcompmod 的 logs",
-    version = "1.5",
+    version = "1.6",
     url = "https://github.com/cy115/"
 }
 
@@ -51,6 +51,10 @@ public void OnPluginEnd()
 void DeleteSourcemodLogs()
 {
     listing = OpenDirectory(logPath, false, NULL_STRING);
+    if (listing == null) {
+        return;
+    }
+    
     while (listing.GetNext(fileName, sizeof(fileName), fileType)) {
         if (!(fileType & FileType_File)) {
             continue;
@@ -80,7 +84,7 @@ void DeleteSourcemodLogs()
         }
 
         char msg[PLATFORM_MAX_PATH] = {'\0'};
-        if (sumNowYearDay - sumYearDay + yearInterval > 10) {
+        if (sumNowYearDay - sumYearDay + yearInterval > 10) {   // max days to save otherwise delete
             FormatEx(msg, sizeof(msg), "%s\\%s", logPath, fileName);
             DeleteFile(msg);
         }
@@ -92,6 +96,10 @@ void DeleteSourcemodLogs()
 void DeleteConfoglCompmodLogs()
 {
     listing = OpenDirectory(ccPath, false, NULL_STRING);
+    if (listing == null) {
+        return;
+    }
+
     while (listing.GetNext(fileName, sizeof(fileName), fileType)) {
         if (!(fileType & FileType_File)) {
             continue;
@@ -121,7 +129,7 @@ void DeleteConfoglCompmodLogs()
         }
 
         char msg[PLATFORM_MAX_PATH] = {'\0'};
-        if (sumNowYearDay - sumYearDay + yearInterval > 10) {
+        if (sumNowYearDay - sumYearDay + yearInterval > 10) {   // max days to save otherwise delete
             FormatEx(msg, sizeof(msg), "%s\\%s", ccPath, fileName);
             DeleteFile(msg);
         }
