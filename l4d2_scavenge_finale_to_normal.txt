@@ -1,0 +1,115 @@
+"Games"
+{
+	"left4dead2"
+	{
+		"Offsets"
+		{
+			"CBaseEntity::AcceptInput"
+			{
+				"windows"		"44"
+				"linux"			"45"
+				"mac"			"45"
+			}
+		}
+
+		"Addresses"
+		{
+			"ZombieManager"
+			{
+				"windows"
+				{
+					"signature"	"StartChangeLevel"
+					"read"	"293"
+				}
+				"linux"
+				{
+					"signature" "TheZombieManager"
+				}
+				"read" "0"
+			}
+		}
+
+		"Functions"
+		{
+			"CY115::ZombieManager::SpawnTank"
+			{
+				"signature"		"ZombieManager::SpawnTank"
+				"callconv"		"thiscall"
+				"return"		"cbaseentity"
+				"this"			"ignore"
+				"arguments"
+				{
+					"a1"
+					{
+						"type"	"vectorptr"
+					}
+					"a2"
+					{
+						"type"	"vectorptr"
+					}
+				}
+			}
+
+			"CY115::ZombieManager::GetRandomPZSpawnPosition"
+			{
+				"signature"		"ZombieManager::GetRandomPZSpawnPosition"
+				"callconv"		"thiscall"
+				"return"		"int"
+				"this"			"ignore"
+				"arguments"
+				{
+					"zombieClass"
+					{
+						"type"	"int"
+					}
+					"attempts"
+					{
+						"type"	"int"
+					}
+					"client"
+					{
+						"type"	"cbaseentity"
+					}
+					"vecPos"
+					{
+						"type"	"int"
+					}
+				}
+			}
+		}
+
+		"Signatures"
+		{
+			"ZombieManager::SpawnTank"
+			{
+				"library"	"server"
+				"linux"		"@_ZN13ZombieManager9SpawnTankERK6VectorRK6QAngle"
+				"windows"	"\x2A\x2A\x2A\x2A\x2A\x2A\x8B\x0D\x2A\x2A\x2A\x2A\xE8\x2A\x2A\x2A\x2A\x85\xC0\x78\x2A\x8B\x0D\x2A\x2A\x2A\x2A\x39\x2A\x2A\x2A\x2A\x2A\x7C\x2A\x33\x2A\x5F"
+				/* ? ? ? ? ? ? 8B 0D ? ? ? ? E8 ? ? ? ? 85 C0 78 ? 8B 0D ? ? ? ? 39 ? ? ? ? ? 7C ? 33 ? 5F */
+			}
+
+			"StartChangeLevel"
+			{
+				"library"	"server"
+				"linux"		"@_ZN15InfoChangelevel16StartChangeLevelEPK10Checkpoint"
+				"windows"	"\x55\x8B\xEC\xA1\x2A\x2A\x2A\x2A\x83\x78\x30\x00\x56\x8B\xF1\x74"
+				/* 55 8B EC A1 ? ? ? ? 83 78 30 00 56 8B F1 74 */
+			}
+
+			"ZombieManager::GetRandomPZSpawnPosition"
+			{
+				"library"	"server"
+				"linux"		"@_ZNK13ZombieManager24GetRandomPZSpawnPositionE15ZombieClassTypeiP13CTerrorPlayerP6Vector"
+				"windows"	"\x55\x8B\x2A\x83\x2A\x2A\x53\x57\x8B\x2A\x2A\x8B\x2A\x89\x2A\x2A\x85\x2A\x75\x2A\x5F\x32"
+				/* 55 8B ? 83 ? ? 53 57 8B ? ? 8B ? 89 ? ? 85 ? 75 ? 5F 32 */
+				/* Search "ZombieManager::GetRandomPZSpawnPosition" */
+			}
+
+			"TheZombieManager"
+			{
+				"library"	"server"
+				"linux"		"@TheZombieManager"
+			}
+		}
+	}
+}
