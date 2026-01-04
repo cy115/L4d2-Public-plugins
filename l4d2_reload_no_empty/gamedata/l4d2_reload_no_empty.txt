@@ -1,0 +1,37 @@
+"Games"
+{
+	"left4dead2"
+	{
+		"MemPatches"
+		{
+			"CTerrorGun::Reload_NoAmmoTransfer"
+			{
+				"signature"		"CTerrorGun::Reload"
+				"linux"
+				{
+					"offset"	"1DDh"
+					"verify"	"\x03\x83\x20\x14\x00\x00"
+					"patch"		"\x83\xC0\x00\x90\x90\x90"
+				}
+			}
+			"CTerrorGun::Reload_NoClipClear"
+			{
+				"signature"		"CTerrorGun::Reload"
+				"linux"
+				{
+					"offset"	"1F9h"
+					"verify"	"\x0F\x85\x22\x01\x00\x00"
+					"patch"		"\x90\x90\x90\x90\x90\x90"
+				}
+			}
+		}
+		"Signatures"
+		{
+			"CTerrorGun::Reload"
+			{
+				"library"		"server"
+				"linux"			"@_ZN10CTerrorGun6ReloadEv"
+			}
+		}
+	}
+}
