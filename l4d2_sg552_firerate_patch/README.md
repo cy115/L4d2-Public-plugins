@@ -1,0 +1,1 @@
+# Remove limit the limit of fire rate of zoomed sg552

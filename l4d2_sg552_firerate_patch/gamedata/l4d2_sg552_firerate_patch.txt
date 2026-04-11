@@ -1,0 +1,27 @@
+"Games"
+{
+	"left4dead2"
+	{
+		"MemPatches"
+		{
+			"sg552_get_rate_of_fire"
+			{
+				"signature"		"CRifle_SG552::GetRateOfFire"
+				"linux"
+				{
+					"offset"	"14h"
+					"verify"	"\x74\x12"
+					"patch"		"\xEB\x12"
+				}
+			}
+		}
+		"Signatures"
+		{
+			"CRifle_SG552::GetRateOfFire"
+			{
+				"library"		"server"
+				"linux"			"@_ZNK12CRifle_SG55213GetRateOfFireEv"
+			}
+		}
+	}
+}
