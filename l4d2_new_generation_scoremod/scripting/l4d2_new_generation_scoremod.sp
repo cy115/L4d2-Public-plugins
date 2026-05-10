@@ -1,13 +1,13 @@
-// Pragma //////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
+/*----------------------------------------------
+-------------------- Pragma --------------------
+----------------------------------------------*/
 
 #pragma semicolon 1
 #pragma newdecls required
 
-// Include Files ///////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
+/*----------------------------------------------
+----------------- Include Files ----------------
+----------------------------------------------*/
 
 #include <sdktools>
 #include <sdkhooks>
@@ -17,20 +17,16 @@
 #undef REQUIRE_PLUGIN
 #include <l4d2_skill_detect>
 
-// Variables ///////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
+/*----------------------------------------------
+------------------- Variables ------------------
+----------------------------------------------*/
 
 int
     g_iTeamSize,
     g_iMapDistance,
     g_iMapMaxDistance,
     g_iPillsBonus,
-    g_iPillWorth,
-    // damage bonus lose per round
-    g_iLostDamageBonus[2],
-    // damage bonus rest
-    g_iSiDamage[2];
+    g_iPillWorth;
 
 float
     // variables of bonus
@@ -49,49 +45,63 @@ float
     // Condition bonus
     g_fConditionBonus,
     g_fConditionBonusRate,
-    // skill bonus gain per rond
-    g_fSkillGainBonus[2],
-    // also about bonus...
-    g_fSurvivorBonus[2],
-    g_fSurvivorMainBonus[2],
-    g_fSurvivorSkillBonus[2],
     // skill bonus percent
-    g_f5Percents,
-    g_f10Percents,
-    g_f20Percents;
+    g_f5Percent,
+    g_f10Percent,
+    g_f20Percent;
 
 bool
     g_bLateLoad,
-    g_bRoundOver,
-    // tier breaker
-    g_bTiebreakerEligibility[2];
+    g_bRoundOver;
 
 // Game Cvars
 ConVar
     g_hCvarValveTieBreaker,
     g_hCvarValveDefibPenalty,
-    g_hCvarValveSurivivalBonus;
+    g_hCvarValveSurvivalBonus;
 
-// Scoremod Convars
-ConVar
-    g_hCvarNGSMPermanentHealthBonusRate,    // 实血分占比
-    g_hCvarNGSMIncapBonusRate,              // 倒地，死亡分数占比
-    g_hCvarNGSMSkillBonusRate,              // 操作分数池占比
-    g_hCvarNGSMPillsBonusRate,              // 药分占比
-    g_hCvarNGSMConditionBonusRate;              // 生还状态占比
+enum struct Team {
+    int iLostDamageBonus;           // damage bonus lose per round
+    int iSiDamage;                  // damage bonus rest
+
+    float fSkillGainBonus;          // skill bonus gain per rond
+    float fSurvivorBonus;
+    float fSurvivorMainBonus;
+    float fSurvivorSkillBonus;
+
+    bool bTiebreakerEligibility;    // tier breaker
+
+    char sSurvivorState[32];
+
+    void Reset() {
+        this.iLostDamageBonus = 0;
+        this.fSkillGainBonus = 0.0;
+        this.iSiDamage = 0;
+        this.bTiebreakerEligibility = false;
+    }
+}
+Team g_esTeam[2];
+
+/*----------------------------------------------
+-------------------- Marcos --------------------
+----------------------------------------------*/
+
+#define PERCENT_5   0.05
+#define PERCENT_10  0.10
+#define PERCENT_20  0.20
 
 public Plugin myinfo =
 {
     name = "L4D2 New Generation ScoreMod",
     author = "Hitomi",
     description = "New Generation ScoreMod for Versus",
-    version = "1.2",
+    version = "1.3",
     url = "https://github.com/cy115/"
 };
 
-// Natives and Forwards ////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
+/*----------------------------------------------
+-------------------- Natives -------------------
+----------------------------------------------*/
 
 public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max)
 {
@@ -115,72 +125,72 @@ public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max
     return APLRes_Success;
 }
 
-public int Native_GetRestBonus(Handle plugin, int numParams) {
+int Native_GetRestBonus(Handle plugin, int numParams) {
     return (RoundToFloor(g_fPermHealthBonus) + RoundToFloor(g_fDamageBonus) + RoundToFloor(g_fSkillBonus) + g_iPillsBonus + RoundToFloor(g_fConditionBonus)) - 
             (RoundToFloor(GetSurvivorPermHealthBonus()) + RoundToFloor(GetSurvivorDamageBonus()) + RoundToFloor(GetSurvivorSkillBonus()) + RoundToFloor(GetSurvivorPillsBonus()) + RoundToFloor(GetSurvivorConditionBonus()));
 }
 
-public int Native_GetPermHealthBonus(Handle plugin, int numParams) {
+int Native_GetPermHealthBonus(Handle plugin, int numParams) {
     return RoundToFloor(GetSurvivorPermHealthBonus());
 }
 
-public int Native_GetDamageBonus(Handle plugin, int numParams) {
+int Native_GetDamageBonus(Handle plugin, int numParams) {
     return RoundToFloor(GetSurvivorDamageBonus());
 }
 
-public int Native_GetSkillBonus(Handle plugin, int numParams) {
+int Native_GetSkillBonus(Handle plugin, int numParams) {
     return RoundToFloor(GetSurvivorSkillBonus());
 }
 
-public int Native_GetPillsBonus(Handle plugin, int numParams) {
+int Native_GetPillsBonus(Handle plugin, int numParams) {
     return RoundToFloor(GetSurvivorPillsBonus());
 }
 
-public int Native_GetConditionBonus(Handle plugin, int numParams) {
+int Native_GetConditionBonus(Handle plugin, int numParams) {
     return RoundToFloor(GetSurvivorConditionBonus());
 }
 
-public int Native_GetMaxChapterBonus(Handle plugin, int numParams) {
+int Native_GetMaxChapterBonus(Handle plugin, int numParams) {
     return RoundToFloor(g_fPermHealthBonus) + RoundToFloor(g_fDamageBonus) + RoundToFloor(g_fSkillBonus) + g_iPillsBonus + RoundToFloor(g_fConditionBonus);
 }
 
-public int Native_GetMaxPermHealthBonus(Handle plugin, int numParams) {
+int Native_GetMaxPermHealthBonus(Handle plugin, int numParams) {
     return RoundToFloor(g_fPermHealthBonus);
 }
 
-public int Native_GetMaxDamageBonus(Handle plugin, int numParams) {
+int Native_GetMaxDamageBonus(Handle plugin, int numParams) {
     return RoundToFloor(g_fDamageBonus);
 }
 
-public int Native_GetMaxSkillBonus(Handle plugin, int numParams) {
+int Native_GetMaxSkillBonus(Handle plugin, int numParams) {
     return RoundToFloor(g_fSkillBonus);
 }
 
-public int Native_GetMaxPillsBonus(Handle plugin, int numParams) {
+int Native_GetMaxPillsBonus(Handle plugin, int numParams) {
     return g_iPillsBonus;
 }
 
-public int Native_GetMaxConditionBonus(Handle plugin, int numParams) {
+int Native_GetMaxConditionBonus(Handle plugin, int numParams) {
     return RoundToFloor(g_fConditionBonus);
 }
 
-// Plugin Functions ////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
+/*----------------------------------------------
+--------------------- Main ---------------------
+----------------------------------------------*/
 
 public void OnPluginStart()
 {
     // Get Game Cvars
     g_hCvarValveTieBreaker = FindConVar("vs_tiebreak_bonus");
     g_hCvarValveDefibPenalty = FindConVar("vs_defib_penalty");
-    g_hCvarValveSurivivalBonus = FindConVar("vs_survival_bonus");
+    g_hCvarValveSurvivalBonus = FindConVar("vs_survival_bonus");
 
-    // Set Plugin Convars
-    g_hCvarNGSMPermanentHealthBonusRate = CreateConVar("l4d2_NGSM_Perm", "1.2", "实血分在路程分的比例[实血分 = 最大路程分 * 比例]");
-    g_hCvarNGSMIncapBonusRate = CreateConVar("l4d2_NGSM_Incap", "0.8", "倒地分在路程分的比例[倒地分 = 最大路程分 * 比例]");
-    g_hCvarNGSMSkillBonusRate = CreateConVar("l4d2_NGSM_Skill", "0.5", "操作分所占路程分比例[操作分 = 最大路程分 * 比例]");
-    g_hCvarNGSMPillsBonusRate = CreateConVar("l4d2_NGSM_Pills", "0.2", "药分所占路程分比例[药分 = 最大路程分 * 比例]");
-    g_hCvarNGSMConditionBonusRate = CreateConVar("l4d2_NGSM_Condition", "0.4", "队伍状态分所占路程分比例");
+    // Regist Plugin Convars
+    CreateConVarHook("l4d2_NGSM_Perm", "1.2", "Permanent health bonus ratio[maxMapDistance * thisRatio].", _, true, 0.0, false, 0.0, OnPHBChange);
+    CreateConVarHook("l4d2_NGSM_Incap", "0.8", "Damage bonus ratio[maxMapDistance * thisRatio].", _, true, 0.0, false, 0.0, OnIBRChange);
+    CreateConVarHook("l4d2_NGSM_Skill", "0.5", "Skill bonus ratio[maxMapDistance * thisRatio].", _, true, 0.0, false, 0.0, OnSBRChange);
+    CreateConVarHook("l4d2_NGSM_Pills", "0.2", "Pill bonus ratio[maxMapDistance * thisRatio].", _, true, 0.0, false, 0.0, OnPBRChange);
+    CreateConVarHook("l4d2_NGSM_Condition", "0.4", "Condition bonus ratio[maxMapDistance * thisRatio].", _, true, 0.0, false, 0.0, OnCBRChange);
 
     // Hook Evnets
     HookEvent("round_start", Event_RoundStart, EventHookMode_PostNoCopy);
@@ -188,15 +198,16 @@ public void OnPluginStart()
     HookEvent("player_death", Event_PlayerDeath);
 
     // Commands
-    RegConsoleCmd("sm_health", Cmd_Bonus);
-    RegConsoleCmd("sm_bonus", Cmd_Bonus);
-    RegConsoleCmd("sm_mapinfo", Cmd_MapInfo);
+    RegConsoleCmd("sm_health", Cmd_Bonus, "Print bonus.");
+    RegConsoleCmd("sm_bonus", Cmd_Bonus, "Print bonus.");
+    RegConsoleCmd("sm_mapinfo", Cmd_MapInfo, "Print Map bonus info.");
 
     // late load
     if (g_bLateLoad) {
         for (int i = 1; i <= MaxClients; i++) {
-            if (!IsClientInGame(i))
+            if (!IsClientInGame(i)) {
                 continue;
+            }
 
             OnClientPutInServer(i);
         }
@@ -207,56 +218,41 @@ public void OnPluginEnd()
 {
     g_hCvarValveTieBreaker.RestoreDefault();
     g_hCvarValveDefibPenalty.RestoreDefault();
-    g_hCvarValveSurivivalBonus.RestoreDefault();
+    g_hCvarValveSurvivalBonus.RestoreDefault();
 }
 
 public void OnConfigsExecuted()
 {
-    // 初始化生还人数，奖励分
+    // Initialize survivor count and bonus values
     g_iTeamSize = FindConVar("survivor_limit").IntValue;
     g_hCvarValveTieBreaker.SetInt(0);
     g_hCvarValveDefibPenalty.SetInt(0);
-    g_hCvarValveSurivivalBonus.SetInt(0);
-    // 初始化地图路程(分)
+    g_hCvarValveSurvivalBonus.SetInt(0);
+    // Initialize map distance (bonus)
     g_iMapMaxDistance = L4D2_GetMapValueInt("max_distance", L4D_GetVersusMaxCompletionScore());
     L4D_SetVersusMaxCompletionScore(g_iMapMaxDistance);
     g_iMapDistance = (g_iMapMaxDistance / 4) * g_iTeamSize;
-    
-    // 插件分数设置
-    g_fPermHealthBonusRate = g_hCvarNGSMPermanentHealthBonusRate.FloatValue;
-    g_fDamageBonusRate = g_hCvarNGSMIncapBonusRate.FloatValue;
-    g_fSkillBonusRate = g_hCvarNGSMSkillBonusRate.FloatValue;
-    g_fPillsBonusRate = g_hCvarNGSMPillsBonusRate.FloatValue;
-    g_fConditionBonusRate = g_hCvarNGSMConditionBonusRate.FloatValue;
 
     g_fMapBonus = g_iMapDistance * (g_fPermHealthBonusRate + g_fDamageBonusRate + g_fSkillBonusRate + g_fPillsBonusRate + g_fConditionBonusRate); // 地图总分
-    g_fPermHealthBonus = g_iMapDistance * g_fPermHealthBonusRate;       // 总血分
-    g_fDamageBonus = g_iMapDistance * g_fDamageBonusRate;               // 总伤害分
-    g_fSkillBonus = g_iMapDistance * g_fSkillBonusRate;                 // 总操作分
-    g_iPillsBonus = RoundToNearest(g_iMapDistance * g_fPillsBonusRate); // 总药分
-    g_fConditionBonus = g_iMapDistance * g_fConditionBonusRate;                 // 总状态分
-    g_iPillWorth = g_iPillsBonus / g_iTeamSize;                         // 每瓶药的分值
+    g_fPermHealthBonus = g_iMapDistance * g_fPermHealthBonusRate;       // Total health bonus
+    g_fDamageBonus = g_iMapDistance * g_fDamageBonusRate;               // Total damage bonus
+    g_fSkillBonus = g_iMapDistance * g_fSkillBonusRate;                 // Total skill bonus
+    g_iPillsBonus = RoundToNearest(g_iMapDistance * g_fPillsBonusRate); // Total pills bonus
+    g_fConditionBonus = g_iMapDistance * g_fConditionBonusRate;         // Total conditionBonus
+    g_iPillWorth = g_iPillsBonus / g_iTeamSize;                         // Bonus of per pain_pill
 
-    // 操作分百分比计算
-    g_f5Percents = g_fSkillBonus * 0.05;
-    g_f10Percents = g_fSkillBonus * 0.1;
-    g_f20Percents = g_fSkillBonus * 0.2;
+    // Skill bonus thresholds
+    g_f5Percent = g_fSkillBonus * 0.05;
+    g_f10Percent = g_fSkillBonus * 0.1;
+    g_f20Percent = g_fSkillBonus * 0.2;
 }
-
-// About the round /////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
 
 public void OnMapStart()
 {
     OnConfigsExecuted();
 
-    g_iLostDamageBonus[0] = 0;
-    g_iLostDamageBonus[1] = 0;
-    g_fSkillGainBonus[0] = 0.0;
-    g_fSkillGainBonus[1] = 0.0;
-    g_bTiebreakerEligibility[0] = false;
-    g_bTiebreakerEligibility[1] = false;
+    g_esTeam[0].Reset();
+    g_esTeam[1].Reset();
 }
 
 public Action L4D2_OnEndVersusModeRound(bool countSurvivors)
@@ -267,34 +263,34 @@ public Action L4D2_OnEndVersusModeRound(bool countSurvivors)
 
     int
         team = InSecondHalfOfRound(),
-        iSurvivalMultiplier = GetUprightSurvivors();
+        iSurvivalMultiplier = countSurvivors ? GetAliveSurvivorCount() : 0;
     
-    // 操作分用心脏除颤仪惩罚分来加
-    g_fSurvivorSkillBonus[team] = GetSurvivorSkillBonus();
-    g_fSurvivorSkillBonus[team] = float(RoundToFloor(g_fSurvivorSkillBonus[team] / g_iTeamSize) * g_iTeamSize);
-    // 主要得分
-    g_fSurvivorMainBonus[team] = GetSurvivorPermHealthBonus() + GetSurvivorDamageBonus() + GetSurvivorPillsBonus() +GetSurvivorConditionBonus();
-    g_fSurvivorMainBonus[team] = float(RoundToFloor(g_fSurvivorMainBonus[team] / g_iTeamSize) *g_iTeamSize);
-    // 所有得分
-    g_fSurvivorBonus[team] = g_fSurvivorMainBonus[team] + g_fSurvivorSkillBonus[team];
-    if (iSurvivalMultiplier > 0 && RoundToFloor(g_fSurvivorBonus[team] / iSurvivalMultiplier) >= g_iTeamSize) {
-        g_hCvarValveSurivivalBonus.SetInt(RoundToFloor(g_fSurvivorMainBonus[team] / iSurvivalMultiplier));
-        g_fSurvivorMainBonus[team] = float(g_hCvarValveSurivivalBonus.IntValue * iSurvivalMultiplier);
-    }
-    else {
-        g_fSurvivorBonus[team] = 0.0;
-        g_hCvarValveSurivivalBonus.SetInt(0);
+    g_esTeam[team].fSurvivorSkillBonus = GetSurvivorSkillBonus();
+    g_esTeam[team].fSurvivorSkillBonus = float(RoundToFloor(g_esTeam[team].fSurvivorSkillBonus / g_iTeamSize) * g_iTeamSize);
+
+    g_esTeam[team].fSurvivorMainBonus = GetSurvivorPermHealthBonus() + GetSurvivorDamageBonus() + GetSurvivorPillsBonus() +GetSurvivorConditionBonus();
+    g_esTeam[team].fSurvivorMainBonus = float(RoundToFloor(g_esTeam[team].fSurvivorMainBonus / g_iTeamSize) *g_iTeamSize);
+
+    g_esTeam[team].fSurvivorBonus = g_esTeam[team].fSurvivorMainBonus + g_esTeam[team].fSurvivorSkillBonus;
+    if (iSurvivalMultiplier > 0 && RoundToFloor(g_esTeam[team].fSurvivorBonus / iSurvivalMultiplier) >= g_iTeamSize) {
+        g_hCvarValveSurvivalBonus.SetInt(RoundToFloor(g_esTeam[team].fSurvivorMainBonus / iSurvivalMultiplier));
+        g_esTeam[team].fSurvivorMainBonus = float(g_hCvarValveSurvivalBonus.IntValue * iSurvivalMultiplier);
+        FormatEx(g_esTeam[team].sSurvivorState, sizeof(Team::sSurvivorState), "%s%i\x01/\x05%i\x01", (iSurvivalMultiplier == g_iTeamSize ? "\x05" : "\x04"), iSurvivalMultiplier, g_iTeamSize);
+    } else {
+        g_esTeam[team].fSurvivorBonus = 0.0;
+        g_hCvarValveSurvivalBonus.SetInt(0);
         g_hCvarValveDefibPenalty.SetInt(0);
-        g_bTiebreakerEligibility[team] = (iSurvivalMultiplier == g_iTeamSize);
+        g_esTeam[team].bTiebreakerEligibility = (iSurvivalMultiplier == g_iTeamSize);
+        FormatEx(g_esTeam[team].sSurvivorState, sizeof(Team::sSurvivorState), "\x04%s\x01", (iSurvivalMultiplier == 0 ? "wiped out" : "bonus depleted"));
     }
 
-    g_hCvarValveDefibPenalty.SetInt(-RoundToFloor(g_fSurvivorSkillBonus[team]));
-    GameRules_SetProp("m_iVersusDefibsUsed", (RoundToFloor(g_fSurvivorSkillBonus[team]) == 0) ? 0 : 1, 4, GameRules_GetProp("m_bAreTeamsFlipped", 4, 0));
+    g_hCvarValveDefibPenalty.SetInt(-RoundToFloor(g_esTeam[team].fSurvivorSkillBonus));
+    GameRules_SetProp("m_iVersusDefibsUsed", (RoundToFloor(g_esTeam[team].fSurvivorSkillBonus) == 0) ? 0 : 1, 4, GameRules_GetProp("m_bAreTeamsFlipped", 4, 0));
 
-    if (team > 0 && g_bTiebreakerEligibility[0] && g_bTiebreakerEligibility[1]) {
-        GameRules_SetProp("m_iChapterDamage", g_iSiDamage[0], _, 0, true);
-        GameRules_SetProp("m_iChapterDamage", g_iSiDamage[1], _, 1, true);
-        if (g_iSiDamage[0] != g_iSiDamage[1]) {
+    if (team > 0 && g_esTeam[0].bTiebreakerEligibility && g_esTeam[1].bTiebreakerEligibility) {
+        GameRules_SetProp("m_iChapterDamage", g_esTeam[0].iSiDamage, _, 0, true);
+        GameRules_SetProp("m_iChapterDamage", g_esTeam[1].iSiDamage, _, 1, true);
+        if (g_esTeam[0].iSiDamage != g_esTeam[1].iSiDamage) {
             g_hCvarValveTieBreaker.SetInt(g_iPillWorth);
         }
     }
@@ -306,10 +302,6 @@ public Action L4D2_OnEndVersusModeRound(bool countSurvivors)
     return Plugin_Continue;
 }
 
-// Client Event ////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-
 public void OnClientPutInServer(int client)
 {
     SDKHook(client, SDKHook_OnTakeDamage, OnTakeDamage);
@@ -320,22 +312,22 @@ public void OnClientDisconnect(int client)
     SDKUnhook(client, SDKHook_OnTakeDamage, OnTakeDamage);
 }
 
-public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &damage, int &damagetype)
+Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &damage, int &damagetype)
 {
     if (!IsSurvivor(victim) || IsPlayerIncap(victim)) {
         return Plugin_Continue;
     }
 
     if (!IsAnyInfected(attacker)) {
-        g_iSiDamage[InSecondHalfOfRound()] += (damage <= 100.0 ? RoundFloat(damage) : 100);
+        g_esTeam[InSecondHalfOfRound()].iSiDamage += (damage <= 100.0 ? RoundFloat(damage) : 100);
     }
 
     return Plugin_Continue;
 }
 
-// Event Hooks /////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
+/*----------------------------------------------
+-------------------- Events --------------------
+----------------------------------------------*/
 
 void Event_RoundStart(Event event, const char[] name, bool dontBroadcast)
 {
@@ -344,27 +336,35 @@ void Event_RoundStart(Event event, const char[] name, bool dontBroadcast)
 
 void Event_PlayerIncapacitated(Event event, const char[] name, bool dontBroadcast)
 {
+    if (g_bRoundOver) {
+        return;
+    }
+
     int sur = GetClientOfUserId(event.GetInt("userid"));
     if (IsSurvivor(sur) && !IsPlayerLedged(sur)) {
-        g_iLostDamageBonus[InSecondHalfOfRound()] += 
+        g_esTeam[InSecondHalfOfRound()].iLostDamageBonus += 
             RoundToFloor(g_fDamageBonus * (GetEntProp(sur, Prop_Send, "m_currentReviveCount") + 1) * 0.1);
     }
 }
 
 void Event_PlayerDeath(Event event, const char[] name, bool dontBroadcast)
 {
+    if (g_bRoundOver) {
+        return;
+    }
+
     int sur = GetClientOfUserId(event.GetInt("userid"));
     if (IsSurvivor(sur) && !GetEntProp(sur, Prop_Send, "m_currentReviveCount")) {
-        g_iLostDamageBonus[InSecondHalfOfRound()] += 
+        g_esTeam[InSecondHalfOfRound()].iLostDamageBonus += 
             RoundToFloor(g_fDamageBonus * 0.25);
     }
 }
 
-// Console Commands ////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
+/*----------------------------------------------
+------------------- Commands -------------------
+----------------------------------------------*/
 
-public Action Cmd_Bonus(int client, int args) // 打印分数信息到聊天栏
+Action Cmd_Bonus(int client, int args)
 {
     if (g_bRoundOver || !client) {
         return Plugin_Handled;
@@ -377,20 +377,23 @@ public Action Cmd_Bonus(int client, int args) // 打印分数信息到聊天栏
         fPillsBonus = GetSurvivorPillsBonus(),
         fConditionBonus = GetSurvivorConditionBonus();
 
-    int totalBonus = RoundToFloor(fPermHealthBonus + fDamageBonus + fSkillBonus + fPillsBonus + fConditionBonus);
+    int
+        team = InSecondHalfOfRound(),
+        totalBonus = RoundToFloor(fPermHealthBonus + fDamageBonus + fSkillBonus + fPillsBonus + fConditionBonus);
     // Second Round
-    if (InSecondHalfOfRound()) {
-        CPrintToChat(client, "{red}R{default}#{olive}1 {default}Bonus: {red}%d {default}<{red}%.1f%%{default}>", 
-                    RoundToFloor(g_fSurvivorMainBonus[0] + g_fSurvivorSkillBonus[0]), 
-                    CalculateBonusPercent(g_fSurvivorMainBonus[0] + g_fSurvivorSkillBonus[0]));
+    if (team) {
+        CPrintToChat(client, "{red}R\x01#\x051 \x01Bonus: {red}%d \x01<{red}%.1f%%\x01> [%s]", 
+                    RoundToFloor(g_esTeam[0].fSurvivorMainBonus + g_esTeam[0].fSurvivorSkillBonus), 
+                    CalculateBonusPercent(g_esTeam[0].fSurvivorMainBonus + g_esTeam[0].fSurvivorSkillBonus),
+                    g_esTeam[0].sSurvivorState);
     }
 
-    CPrintToChat(client, "{blue}R{default}#{olive}%i {default}Bonus: {blue}%d {default}<{blue}%.1f%%{default}>", 
-        InSecondHalfOfRound() + 1, totalBonus, 
+    CPrintToChat(client, "{blue}R\x01#\x05%i \x01Bonus: {blue}%d \x01<{blue}%.1f%%\x01>", 
+        team + 1, totalBonus, 
         CalculateBonusPercent(fPermHealthBonus + fDamageBonus + fSkillBonus + fPillsBonus + fConditionBonus, g_fMapBonus));
-    CPrintToChat(client, "{default}[ {blue}HB{default}: {olive}%.0f%% {default}| {blue}DB{default}: {olive}%.0f%% {default}| {blue}SB{default}: {olive}%.0f%% {default}| {blue}PB{default}: {olive}%.0f%% {default}| {blue}CB{default}: {olive}%.0f%% {default}]", 
+    CPrintToChat(client, "\x01[ {blue}HB\x01: \x05%.0f%% \x01| {blue}DB\x01: \x05%.0f%% \x01| {blue}SB\x01: \x05%.0f%% \x01| {blue}PB\x01: \x05%.0f%% \x01| {blue}CB\x01: \x05%.0f%% \x01]", 
         CalculateBonusPercent(fPermHealthBonus, g_fPermHealthBonus), CalculateBonusPercent(fDamageBonus, g_fDamageBonus), 
-        CalculateBonusPercent(g_fSkillGainBonus[InSecondHalfOfRound()], g_fSkillBonus), CalculateBonusPercent(fPillsBonus, float(g_iPillsBonus)), 
+        CalculateBonusPercent(g_esTeam[team].fSkillGainBonus, g_fSkillBonus), CalculateBonusPercent(fPillsBonus, float(g_iPillsBonus)), 
         CalculateBonusPercent(fConditionBonus, g_fConditionBonus));
     // R#1 Bonus: 1145 <81%>
     // [HB: 20% | DB: 50% | SB: 56% | PB: 75% | CB: 50%]
@@ -398,21 +401,27 @@ public Action Cmd_Bonus(int client, int args) // 打印分数信息到聊天栏
     return Plugin_Handled;
 }
 
-public Action Cmd_MapInfo(int client, int args) // 打印地图信息
+Action Cmd_MapInfo(int client, int args)
 {
     if (!client) {
         return Plugin_Handled;
     }
 
-    CPrintToChat(client, "{default}[{lightgreen}NGSM {default}:: {lightgreen}%i{default}v{lightgreen}%i{default}] {olive}Map Info", g_iTeamSize, g_iTeamSize);
-    CPrintToChat(client, "{blue}Distance{default}: [{olive}%d{default}]", g_iMapDistance);
-    CPrintToChat(client, "{blue}MaxBonus{default}: [{olive}%d{default}]", RoundToFloor(g_fMapBonus));
-    CPrintToChat(client, "{blue}PermBonus{default}: [{olive}%d{default}]", RoundToFloor(g_fPermHealthBonus));
-    CPrintToChat(client, "{blue}DamageBonus{default}: [{olive}%d{default}]", RoundToFloor(g_fDamageBonus));
-    CPrintToChat(client, "{blue}SkillBonus{default}: [{olive}%d{default}]", RoundToFloor(g_fSkillBonus));
-    CPrintToChat(client, "{blue}PillsBonus{default}: [{olive}%d{default}]", g_iPillsBonus);
-    CPrintToChat(client, "{blue}ConditionBonus{default}: [{olive}%d{default}]", RoundToFloor(g_fConditionBonus));
-    CPrintToChat(client, "{blue}TieBreaker{default}: [{olive}%d{default}]", g_iPillWorth);
+    CPrintToChat(client, "\x01[{lightgreen}NGSM \x01:: {lightgreen}%i\x01v{lightgreen}%i\x01] \x05Map Info", g_iTeamSize, g_iTeamSize);
+    CPrintToChat(client, "{blue}Distance\x01: [\x05%d\x01]\n{blue}MaxBonus\x01: [\x05%d\x01]", g_iMapDistance, RoundToFloor(g_fMapBonus));
+    CPrintToChat(client, "{blue}PermBonus\x01: [\x05%d\x01]\n{blue}DamageBonus\x01: [\x05%d\x01]", RoundToFloor(g_fPermHealthBonus), RoundToFloor(g_fDamageBonus));
+    CPrintToChat(client, "{blue}SkillBonus\x01: [\x05%d\x01]\n{blue}PillsBonus\x01: [\x05%d\x01]", RoundToFloor(g_fSkillBonus), g_iPillsBonus);
+    CPrintToChat(client, "{blue}ConditionBonus\x01: [\x05%d\x01]\n{blue}TieBreaker\x01: [\x05%d\x01]", RoundToFloor(g_fConditionBonus), g_iPillWorth);
+
+    // [NGSM :: 4v4] Map Info
+    // Distance: [400]
+    // MaxBonus: [920]
+    // PermBonus: [600]
+    // DamageBonus: [200]
+    // SkillBonus: [30]
+    // PillsBonus: [30]
+    // ConditionBonus: [30]
+    // TieBreaker: [30]
 
     return Plugin_Handled;
 }
@@ -420,17 +429,19 @@ public Action Cmd_MapInfo(int client, int args) // 打印地图信息
 // Functions of Others
 Action Timer_PrintRoundEndBonus(Handle timer)
 {
-    for (int i = 0; i <= InSecondHalfOfRound(); i++) {
-        CPrintToChatAll("{lightgreen}R{default}#{olive}%i {default}Bonus: {lightgreen}%d{default}/{lightgreen}%d {default}<{lightgreen}%.1f%%{default}>",
-                        i + 1, RoundToFloor(g_fSurvivorMainBonus[InSecondHalfOfRound()]), 
+    int team = InSecondHalfOfRound();
+    for (int i = 0; i <= team; i++) {
+        CPrintToChatAll("{lightgreen}R\x01#\x05%i \x01Bonus: {lightgreen}%d\x01/{lightgreen}%d \x01<{lightgreen}%.1f%%\x01> [%s]",
+                        i + 1, RoundToFloor(g_esTeam[team].fSurvivorMainBonus), 
                         RoundToFloor(g_fMapBonus), 
-                        CalculateBonusPercent(g_fSurvivorMainBonus[InSecondHalfOfRound()]));
+                        CalculateBonusPercent(g_esTeam[team].fSurvivorMainBonus),
+                        g_esTeam[team].sSurvivorState);
     }
 
-    if (InSecondHalfOfRound() && g_bTiebreakerEligibility[0] && g_bTiebreakerEligibility[1]) {
-        CPrintToChatAll("{red}TIEBREAKER{default}: Team {red}%#1{default} - {red}%i{default}, Team {blue}%#2{default} - {blue}%i", g_iSiDamage[0], g_iSiDamage[1]);
-        if (g_iSiDamage[0] == g_iSiDamage[1]) {
-            CPrintToChatAll("{red}双方平分秋色，无法决出胜负!");
+    if (team && g_esTeam[0].bTiebreakerEligibility && g_esTeam[1].bTiebreakerEligibility) {
+        CPrintToChatAll("{red}TIEBREAKER\x01: Team {red}#1\x01 - {red}%i\x01, Team {blue}#2\x01 - {blue}%i", g_esTeam[0].iSiDamage, g_esTeam[1].iSiDamage);
+        if (g_esTeam[0].iSiDamage == g_esTeam[1].iSiDamage) {
+            CPrintToChatAll("{red}Teams have performed absolutely equal\x01! Impossible to decide a clear round winner");
         }
     }
 
@@ -461,14 +472,15 @@ float GetSurvivorPermHealthBonus()
 
 float GetSurvivorDamageBonus()
 {
-    return (g_fDamageBonus >= g_iLostDamageBonus[InSecondHalfOfRound()]) ? 
-            g_fDamageBonus - g_iLostDamageBonus[InSecondHalfOfRound()] : 
-            0.0;
+    int team = InSecondHalfOfRound();
+    float LostDamage = float(g_esTeam[team].iLostDamageBonus);
+
+    return (g_fDamageBonus >= LostDamage) ? g_fDamageBonus - LostDamage : 0.0;
 }
 
 float GetSurvivorSkillBonus()
 {
-    return g_fSkillGainBonus[InSecondHalfOfRound()];
+    return g_esTeam[InSecondHalfOfRound()].fSkillGainBonus;
 }
 
 float GetSurvivorPillsBonus()
@@ -520,25 +532,27 @@ float GetSurvivorConditionBonus()
     return iGreenSurvivorCount * fGreenWorth + iYellowSurvivorCount * fYellowWorth + iRedSurvivorCount * fRedWorth;
 }
 
-// Tools
-stock int InSecondHalfOfRound() // 判断是否第二回合
+/*----------------------------------------------
+--------------------- Tools --------------------
+----------------------------------------------*/
+stock int InSecondHalfOfRound()
 {
     return GameRules_GetProp("m_bInSecondHalfOfRound");
 }
 
-stock int GetUprightSurvivors() // 获取当前幸存者人数
+stock int GetAliveSurvivorCount()
 {
-    int aliveCount, survivorCount;
-    for (int i = 1; i <= MaxClients && survivorCount < g_iTeamSize; i++) {
+    int iAliveCount, iSurvivorCount;
+    for (int i = 1; i <= MaxClients && iSurvivorCount < g_iTeamSize; i++) {
         if (IsSurvivor(i)) {
-            survivorCount++;
-            if (IsPlayerAlive(i) && !IsPlayerIncap(i) && !IsPlayerLedged(i)) {
-                aliveCount++;
+            iSurvivorCount++;
+            if (IsPlayerAlive(i)) {
+                iAliveCount++;
             }
         }
     }
 
-    return aliveCount;
+    return iAliveCount;
 }
 
 stock int GetSurvivorPermanentHealth(int client)
@@ -552,12 +566,12 @@ stock int GetSurvivorTemporaryHealth(int client)
 	return (temphp > 0 ? temphp : 0);
 }
 
-stock float CalculateBonusPercent(float score, float maxbonus = -1.0) // 计算分数百分比
+stock float CalculateBonusPercent(float score, float maxbonus = -1.0)
 {
     return score / (maxbonus == -1.0 ? g_fMapBonus : maxbonus) * 100;
 }
 
-stock bool HasPills(int client) // 判断生还是否有药
+stock bool HasPills(int client)
 {
     int item = GetPlayerWeaponSlot(client, 4);
     if (IsValidEdict(item)) {
@@ -581,68 +595,110 @@ stock bool IsPlayerIncap(int client)
 
 stock bool IsPlayerLedged(int client)
 {
-    return view_as<bool>(GetEntProp(client, Prop_Send, "m_isHangingFromLedge") | GetEntProp(client, Prop_Send, "m_isFallingFromLedge"));
+    return view_as<bool>(GetEntProp(client, Prop_Send, "m_isHangingFromLedge")|GetEntProp(client, Prop_Send, "m_isFallingFromLedge"));
 }
 
-// Skill Detect ////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
+/*----------------------------------------------
+------------------ Skill Detect ----------------
+----------------------------------------------*/
 
-public void OnSpecialClear(int clearer, int pinner, int pinvictim, int zombieClass, float timeA, float timeB, bool withShove) {
+public void OnSpecialClear(int clearer, int pinner, int pinvictim, int zombieClass, float timeA, float timeB, bool withShove)
+{
+    int team = InSecondHalfOfRound();
     if (timeA <= 0.2 || timeB <= 0.2) {
-        if (g_fSkillGainBonus[InSecondHalfOfRound()] < g_fSkillBonus) {
-            g_fSkillGainBonus[InSecondHalfOfRound()] = g_fSkillGainBonus[InSecondHalfOfRound()] + g_f5Percents >= g_fSkillBonus ? g_fSkillBonus : g_fSkillGainBonus[InSecondHalfOfRound()] + g_f5Percents;
+        if (g_esTeam[team].fSkillGainBonus < g_fSkillBonus) {
+            g_esTeam[team].fSkillGainBonus = g_esTeam[team].fSkillGainBonus + g_f5Percent >= g_fSkillBonus ? g_fSkillBonus : g_esTeam[team].fSkillGainBonus + g_f5Percent;
         }
     }
 }
 
-public void OnHunterSkeet(int survivor, int hunter) {
-    if (g_fSkillGainBonus[InSecondHalfOfRound()] < g_fSkillBonus) {
-        g_fSkillGainBonus[InSecondHalfOfRound()] = g_fSkillGainBonus[InSecondHalfOfRound()] + g_f5Percents >= g_fSkillBonus ? g_fSkillBonus : g_fSkillGainBonus[InSecondHalfOfRound()] + g_f5Percents;
+public void OnHunterSkeet(int survivor, int hunter)
+{
+    if (g_bRoundOver) {
+        return;
+    }
+
+    int team = InSecondHalfOfRound();
+    if (g_esTeam[team].fSkillGainBonus < g_fSkillBonus){
+        g_esTeam[team].fSkillGainBonus = g_esTeam[team].fSkillGainBonus + g_f5Percent >= g_fSkillBonus ? g_fSkillBonus : g_esTeam[team].fSkillGainBonus + g_f5Percent;
     }
 }
 
-public void OnChargerLevelHurt(int survivor, int charger, int damage) {
-    if (g_fSkillGainBonus[InSecondHalfOfRound()] < g_fSkillBonus) {
-        g_fSkillGainBonus[InSecondHalfOfRound()] = g_fSkillGainBonus[InSecondHalfOfRound()] + g_f5Percents >= g_fSkillBonus ? g_fSkillBonus : g_fSkillGainBonus[InSecondHalfOfRound()] + g_f5Percents;
+public void OnChargerLevelHurt(int survivor, int charger, int damage)
+{
+    if (g_bRoundOver) {
+        return;
+    }
+    
+    int team = InSecondHalfOfRound();
+    if (g_esTeam[team].fSkillGainBonus < g_fSkillBonus) {
+        g_esTeam[team].fSkillGainBonus = g_esTeam[team].fSkillGainBonus + g_f5Percent >= g_fSkillBonus ? g_fSkillBonus : g_esTeam[team].fSkillGainBonus + g_f5Percent;
     }
 }
 
-public void OnWitchCrown(int survivor, int damage) {
-    if (g_fSkillGainBonus[InSecondHalfOfRound()] < g_fSkillBonus) {
-        g_fSkillGainBonus[InSecondHalfOfRound()] = g_fSkillGainBonus[InSecondHalfOfRound()] + g_f10Percents >= g_fSkillBonus ? g_fSkillBonus : g_fSkillGainBonus[InSecondHalfOfRound()] + g_f10Percents;
+public void OnWitchCrown(int survivor, int damage)
+{
+    if (g_bRoundOver) {
+        return;
+    }
+    
+    int team = InSecondHalfOfRound();
+    if (g_esTeam[team].fSkillGainBonus < g_fSkillBonus) {
+        g_esTeam[team].fSkillGainBonus = g_esTeam[team].fSkillGainBonus + g_f10Percent >= g_fSkillBonus ? g_fSkillBonus : g_esTeam[team].fSkillGainBonus + g_f10Percent;
     }
 }
 
-public void OnWitchCrownHurt(int survivor, int damage, int chipdamage) {
-    if (g_fSkillGainBonus[InSecondHalfOfRound()] < g_fSkillBonus) {
-        g_fSkillGainBonus[InSecondHalfOfRound()] = g_fSkillGainBonus[InSecondHalfOfRound()] + g_f10Percents >= g_fSkillBonus ? g_fSkillBonus : g_fSkillGainBonus[InSecondHalfOfRound()] + g_f10Percents;
+public void OnWitchCrownHurt(int survivor, int damage, int chipdamage)
+{
+    if (g_bRoundOver) {
+        return;
+    }
+    
+    int team = InSecondHalfOfRound();
+    if (g_esTeam[team].fSkillGainBonus < g_fSkillBonus) {
+        g_esTeam[team].fSkillGainBonus = g_esTeam[team].fSkillGainBonus + g_f10Percent >= g_fSkillBonus ? g_fSkillBonus : g_esTeam[team].fSkillGainBonus + g_f10Percent;
     }
 }
 
-public void OnTongueCut(int survivor, int smoker) {
-    if (g_fSkillGainBonus[InSecondHalfOfRound()] < g_fSkillBonus) {
-        g_fSkillGainBonus[InSecondHalfOfRound()] = g_fSkillGainBonus[InSecondHalfOfRound()] + g_f5Percents >= g_fSkillBonus ? g_fSkillBonus : g_fSkillGainBonus[InSecondHalfOfRound()] + g_f5Percents;
+public void OnTongueCut(int survivor, int smoker)
+{
+    if (g_bRoundOver) {
+        return;
+    }
+    
+    int team = InSecondHalfOfRound();
+    if (g_esTeam[team].fSkillGainBonus < g_fSkillBonus) {
+        g_esTeam[team].fSkillGainBonus = g_esTeam[team].fSkillGainBonus + g_f5Percent >= g_fSkillBonus ? g_fSkillBonus : g_esTeam[team].fSkillGainBonus + g_f5Percent;
     }
 }
 
-public void OnHunterHighPounce(int hunter, int survivor, int actualDamage, float calculatedDamage, float height, bool reportedHigh) {
+public void OnHunterHighPounce(int hunter, int survivor, int actualDamage, float calculatedDamage, float height, bool reportedHigh)
+{
+    if (g_bRoundOver) {
+        return;
+    }
+    
+    int team = InSecondHalfOfRound();
     if (actualDamage > 19) {
-        if (g_fSkillGainBonus[InSecondHalfOfRound()] >= g_f10Percents) {
-            g_fSkillGainBonus[InSecondHalfOfRound()] -= g_f10Percents;
-        }
-        else {
-            g_fSkillGainBonus[InSecondHalfOfRound()] = 0.0;
+        if (g_esTeam[team].fSkillGainBonus >= g_f10Percent) {
+            g_esTeam[team].fSkillGainBonus -= g_f10Percent;
+        } else {
+            g_esTeam[team].fSkillGainBonus = 0.0;
         }
     }
 }
 
-public void OnDeathCharge(int charger, int survivor, float height, float distance, bool wasCarried) {
-    if (g_fSkillGainBonus[InSecondHalfOfRound()] >= g_f20Percents) {
-        g_fSkillGainBonus[InSecondHalfOfRound()] -= g_f20Percents;
+public void OnDeathCharge(int charger, int survivor, float height, float distance, bool wasCarried)
+{
+    if (g_bRoundOver) {
+        return;
     }
-    else {
-        g_fSkillGainBonus[InSecondHalfOfRound()] = 0.0;
+    
+    int team = InSecondHalfOfRound();
+    if (g_esTeam[team].fSkillGainBonus >= g_f20Percent) {
+        g_esTeam[team].fSkillGainBonus -= g_f20Percent;
+    } else {
+        g_esTeam[team].fSkillGainBonus = 0.0;
     }
 }
 
@@ -650,8 +706,7 @@ stock bool IsAnyInfected(int entity)
 {
     if (entity > 0 && entity <= MaxClients) {
         return IsClientInGame(entity) && GetClientTeam(entity) == 3;
-    }
-    else if (entity > MaxClients) {
+    } else if (entity > MaxClients) {
         char classname[64];
         GetEdictClassname(entity, classname, sizeof(classname));
         if (StrEqual(classname, "infected") || StrEqual(classname, "witch")) {
@@ -660,4 +715,47 @@ stock bool IsAnyInfected(int entity)
     }
 
     return false;
+}
+
+/*----------------------------------------------
+-------------------- ConVars -------------------
+----------------------------------------------*/
+ConVar CreateConVarHook(const char[] name, const char[] defaultValue, const char[] description = "",
+    int flags = 0, bool hasMin = false, float min = 0.0, bool hasMax = false, float max = 0.0, ConVarChanged callback) {
+    ConVar cv = CreateConVar(name, defaultValue, description, flags, hasMin, min, hasMax, max);
+    
+    Call_StartFunction(INVALID_HANDLE, callback);
+    Call_PushCell(cv);
+    Call_PushNullString();
+    Call_PushNullString();
+    Call_Finish();
+    
+    cv.AddChangeHook(callback);
+    
+    return cv;
+}
+
+void OnPHBChange(ConVar convar, const char[] oldValue, const char[] newValue)
+{
+    g_fPermHealthBonusRate = convar.FloatValue;
+}
+
+void OnIBRChange(ConVar convar, const char[] oldValue, const char[] newValue)
+{
+    g_fDamageBonusRate = convar.FloatValue;
+}
+
+void OnSBRChange(ConVar convar, const char[] oldValue, const char[] newValue)
+{
+    g_fSkillBonusRate = convar.FloatValue;
+}
+
+void OnPBRChange(ConVar convar, const char[] oldValue, const char[] newValue)
+{
+    g_fPillsBonusRate = convar.FloatValue;
+}
+
+void OnCBRChange(ConVar convar, const char[] oldValue, const char[] newValue)
+{
+    g_fConditionBonusRate = convar.FloatValue;
 }

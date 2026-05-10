@@ -55,6 +55,10 @@ MRESReturn OnCTerrorPlayerThrowWeaponPre(int pThis, DHookReturn hReturn, DHookPa
     if (entity && IsValidEntity(entity)) {
         char weapon[64];
         GetEntityClassname(entity, weapon, sizeof(weapon));
+        if  (weapon[0] != 'w') {
+            return MRES_Ignored;
+        }
+
         if ((StrEqual(weapon, "weapon_pain_pills") && (g_iBlockType & BLOCKTYPE_PILLS)) || 
             StrEqual(weapon, "weapon_adrenaline") && (g_iBlockType & BLOCKTYPE_ADRENALINE)) {
             hReturn.Value = 0;
