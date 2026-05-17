@@ -1,0 +1,27 @@
+"Games"
+{
+	"left4dead2"
+	{
+		"MemPatches"
+		{
+			"allow_melee_duration_tongue"
+			{
+				"signature"		"CTerrorMeleeWeapon::PrimaryAttack"
+				"linux"
+				{
+					"offset"	"29h"
+					"verify"	"\x83\xF8\xFF"
+					"patch"		"\x39\xC0\x90"
+				}
+			}
+		}
+		"Signatures"
+		{
+			"CTerrorMeleeWeapon::PrimaryAttack"
+			{
+				"library"		"server"
+				"linux"			"@_ZN18CTerrorMeleeWeapon13PrimaryAttackEv"
+			}
+		}
+	}
+}
