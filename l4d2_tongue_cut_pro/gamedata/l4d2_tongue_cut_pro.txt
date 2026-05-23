@@ -13,6 +13,12 @@
 					"verify"	"\x83\xF8\xFF"
 					"patch"		"\x39\xC0\x90"
 				}
+				"windows"
+				{
+					"offset"	"19h"
+					"verify"	"\x83\xF8\xFF"
+					"patch"		"\x39\xC0\x90"
+				}
 			}
 		}
 		"Signatures"
@@ -21,6 +27,8 @@
 			{
 				"library"		"server"
 				"linux"			"@_ZN18CTerrorMeleeWeapon13PrimaryAttackEv"
+				"windows"		"\x56\x57\x8B\xF1\xE8\x2A\x2A\x2A\x2A\x8B\xF8\x85\xFF\x0F\x84\x2A\x2A\x2A\x2A\x8B\x87\xD8\x33\x00\x00"
+				/* 56 57 8B F1 E8 ? ? ? ? 8B F8 85 FF 0F 84 ? ? ? ? 8B 87 D8 33 00 00 */
 			}
 		}
 	}
