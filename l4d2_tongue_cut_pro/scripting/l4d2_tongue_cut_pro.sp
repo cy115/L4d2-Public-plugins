@@ -3,6 +3,15 @@
 
 #include <sourcescramble>
 
+public Plugin myinfo =
+{
+    name = "L4D2 Tongue Cut Pro",
+    author = "Hitomi",
+    description = "allow cut tongue after get grabbed.",
+    version = "1.0",
+    url = "https://github.com/cy115/"
+};
+
 public void OnPluginStart()
 {
     GameData hGameData = new GameData("l4d2_tongue_cut_pro");
